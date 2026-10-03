@@ -143,7 +143,7 @@ export function createHandsAdapter({ root }) {
       const y = (yaw * Math.PI) / 180;
       const p = (pitch * Math.PI) / 180;
       const direction = new Vec3(-Math.sin(y) * Math.cos(p), -Math.sin(p), Math.cos(y) * Math.cos(p));
-      const hit = await eyes.world.raycast(from.offset(0, EYE_HEIGHT, 0), direction, REACH + 0.7);
+      const hit = await eyes.world.raycast(from.offset(0, EYE_HEIGHT, 0), direction, REACH + 0.2);
       if (!hit) return false;                       // nothing in reach along that line
       const victim = hit.position;
       const name = eyes.blockAt(victim).name;
@@ -172,7 +172,8 @@ export function createHandsAdapter({ root }) {
           await hands.release(KEY.w);
           if (!(await breakBlock(new Vec3(b.x, b.y, b.z)))) return 'blocked';
         }
-        const target = new Vec3(node.x + 0.5, node.y, node.z + 0.5);
+        // A planned step is a block, or a point already in the middle of one.
+        const target = new Vec3(Math.floor(node.x) + 0.5, node.y, Math.floor(node.z) + 0.5);
         let best = Infinity;
         let progressAt = Date.now();
         let hops = 0;
@@ -192,6 +193,9 @@ export function createHandsAdapter({ root }) {
             hands.face(step(now.yaw, want, 14), now.pitch + (14 - now.pitch) * 0.3);
           }
           await hands.hold(KEY.w);
+          // In water a player holds the jump key to stay up.
+          if (eyes.blockAt(p.floored())?.name === 'water') await hands.hold(KEY.space);
+          else await hands.release(KEY.space);
           if (Date.now() - progressAt > 1300) {
             if (++hops > 3) return 'stuck';
             await hands.tap(KEY.space, 140);
@@ -203,6 +207,7 @@ export function createHandsAdapter({ root }) {
       return 'arrived';
     } finally {
       await hands.release(KEY.w);
+      await hands.release(KEY.space);
     }
   }
 

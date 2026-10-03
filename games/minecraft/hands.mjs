@@ -18,7 +18,7 @@ const HOTBAR_KEYS = [18, 19, 20, 21, 23, 22, 26, 28, 25];
 const TITLE_BAR = 28;
 const GUI_SCALE = 4;   // written into the player window's options.txt by tools/watch_client.mjs
 
-function playerWindowPid() {
+export function playerWindowPid() {
   try {
     return execFileSync('pgrep', ['-f', `username ${BOT_NAME}`], { encoding: 'utf8' }).trim().split('\n')[0] || null;
   } catch {
@@ -26,7 +26,8 @@ function playerWindowPid() {
   }
 }
 
-function windowContent(pid) {
+// The inside of the game window in screen points, without its title bar.
+export function windowContent(pid) {
   const text = execFileSync('osascript', ['-l', 'JavaScript', '-e', `
     ObjC.import("CoreGraphics");
     var all = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)));
