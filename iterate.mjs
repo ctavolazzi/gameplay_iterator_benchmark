@@ -87,9 +87,9 @@ async function openLlama() {
     label: basename(model, '.gguf'),
     modelHash: await fileSha256(model),
     stop: () => server.stop(),
-    // If the model server is stopped from outside mid-run, start it again and carry on.
+    // Last resort, after a plain retry has also failed: start the model server again.
     restart: async () => {
-      console.log('  the model server stopped answering; starting it again');
+      console.log('  the model server is not answering; starting it again');
       server.stop();
       server = await start();
     },

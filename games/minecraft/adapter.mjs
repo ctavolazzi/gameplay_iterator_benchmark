@@ -144,8 +144,18 @@ export function createAdapter({ root } = {}) {
       bot.stopDigging();
       throw error;
     }
+    // Pick up what dropped. Walk to where the block was, and if nothing has arrived, to the
+    // nearest dropped item: ore dug from a wall can fall out of reach of that spot (run 22
+    // dug iron ore and picked nothing up).
+    const gained = () => Object.entries(carried()).some(([item, count]) => count > (before[item] ?? 0));
     await walkTo(new goals.GoalNear(target.x, target.y, target.z, 1), 10000, 'picking it up').catch(() => {});
-    await pause(1200);
+    for (let waited = 0; waited < 4 && !gained(); waited++) {
+      await pause(600);
+      if (gained()) break;
+      const drop = bot.nearestEntity((entity) => entity.name === 'item' && entity.position.distanceTo(bot.entity.position) < 8);
+      if (drop) await walkTo(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 0), 6000, 'reaching the dropped item').catch(() => {});
+    }
+    await pause(400);
     const after = carried();
     const got = Object.fromEntries(Object.keys(after).filter((k) => after[k] > (before[k] ?? 0)).map((k) => [k, after[k] - (before[k] ?? 0)]));
     return Object.keys(got).length ? { ok: true, got } : { ok: false, error: `dug the ${name} but picked nothing up` };

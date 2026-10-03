@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, openSync } from 'node:fs';
+import { request } from 'node:http';
 import { canon, sha256 } from '../canon.mjs';
 
 // The local model as the player, through llama.cpp's llama-server. Every decision is one
@@ -40,6 +41,31 @@ export async function startLlamaServer({ bin, model, port = 8089, threads = 4, c
   return { url, stop: () => child.kill() };
 }
 
+// One request on a connection of its own. fetch keeps connections open and reuses them, and
+// that lost two runs on 2026-10-03: when a skill kept this process busy for a while (path
+// planning does), the next request went out on a connection llama-server had already
+// closed and failed with ECONNRESET, "fetch failed". The server itself was fine. Found by
+// another session with a probe: 2 of 9 requests failed after a busy gap, 0 of 17 after an
+// idle one.
+function postJson(url, body) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = request(url, {
+      method: 'POST',
+      agent: false,
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) },
+    }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { text += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, text }));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+
 function brief(value, limit = 160) {
   const text = typeof value === 'string' ? value : canon(value);
   return text.length > limit ? `${text.slice(0, limit)}...` : text;
@@ -64,55 +90,49 @@ export function buildMessages({ rules, briefing, observation, actions, previous 
   return [{ role: 'system', content: system }, { role: 'user', content: user }];
 }
 
-// recover, if given, brings the model server back when it has stopped answering; the
-// decision is then asked once more. Twice on 2026-10-03 a llama-server was stopped from
-// outside in the middle of a run, and each time the whole run was lost.
+// A request that fails is sent once more as it is. Only if that fails too is recover()
+// called, to start the model server again, before a last try.
 export function llamaPlayer({ url, label, modelHash = null, briefing = '', recover = null }) {
-  const ask = (request) => fetch(`${url}/v1/chat/completions`, request);
   return {
     id: `llama:${label}`,
     modelHash,
     promptVersion: PROMPT_VERSION,
     async decide({ observation, actions, rules, previous = [] }) {
       const messages = buildMessages({ rules, briefing, observation, actions, previous });
-      const res = await ask(this.request(messages, actions)).catch(async (error) => {
-        if (!recover) throw error;
-        await recover();
-        return ask(this.request(messages, actions));
-      });
-      return this.read(res, messages);
-    },
-
-    request(messages, actions) {
-      return {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          messages,
-          temperature: 0,
-          seed: 0,
-          max_tokens: 48,
-          cache_prompt: true,
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'choice',
-              strict: true,
-              schema: {
-                type: 'object',
-                properties: { do: { type: 'string', enum: actions.map((a) => a.name) } },
-                required: ['do'],
-                additionalProperties: false,
-              },
+      const send = () => postJson(`${url}/v1/chat/completions`, {
+        messages,
+        temperature: 0,
+        seed: 0,
+        max_tokens: 48,
+        cache_prompt: true,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'choice',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: { do: { type: 'string', enum: actions.map((a) => a.name) } },
+              required: ['do'],
+              additionalProperties: false,
             },
           },
-        }),
-      };
-    },
-
-    async read(res, messages) {
-      if (!res.ok) throw new Error(`llama-server answered ${res.status}: ${brief(await res.text(), 300)}`);
-      const json = await res.json();
+        },
+      });
+      let res;
+      try {
+        res = await send();
+      } catch (first) {
+        try {
+          res = await send();
+        } catch {
+          if (!recover) throw first;
+          await recover();
+          res = await send();
+        }
+      }
+      if (res.status !== 200) throw new Error(`llama-server answered ${res.status}: ${brief(res.text, 300)}`);
+      const json = JSON.parse(res.text);
       const text = json.choices?.[0]?.message?.content ?? '';
       let name = null;
       try { name = JSON.parse(text).do ?? null; } catch { /* recorded as an illegal action */ }
