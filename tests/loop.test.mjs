@@ -145,6 +145,37 @@ test('the model player sends the offered options and reads the choice', async ()
   }
 });
 
+test('a model server that has stopped is brought back once, and the decision is asked again', async () => {
+  const answer = (req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"do":"gather"}' } }] }));
+    });
+  };
+  // Take a free port, then close it, so the first request finds nobody listening.
+  const first = createServer(answer);
+  await new Promise((resolve) => first.listen(0, '127.0.0.1', resolve));
+  const { port } = first.address();
+  await new Promise((resolve) => first.close(resolve));
+  let server = null;
+  let recovered = 0;
+  const recover = async () => {
+    recovered += 1;
+    server = createServer(answer);
+    await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
+  };
+  const input = { observation: {}, actions: [{ name: 'gather', about: 'collect' }], rules: 'A game.', previous: [] };
+  try {
+    const url = `http://127.0.0.1:${port}`;
+    await assert.rejects(llamaPlayer({ url, label: 'stub' }).decide(input), 'with no way to recover, the failure is passed on');
+    assert.deepEqual((await llamaPlayer({ url, label: 'stub', recover }).decide(input)).action, { name: 'gather' });
+    assert.equal(recovered, 1);
+  } finally {
+    server?.close();
+  }
+});
+
 // A copy of the repo's first playbook in a scratch root, and one stored run to coach.
 async function coachSetup() {
   const root = tempDir();

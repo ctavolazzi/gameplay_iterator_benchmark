@@ -78,10 +78,22 @@ async function openGame(name, wanted) {
 async function openLlama() {
   const model = resolve(ROOT, values.model ?? config.model);
   if (!existsSync(model)) throw new Error(`no model file at ${model}; tools/fetch_runtime.sh fetches it`);
-  const server = await startLlamaServer({
+  const start = () => startLlamaServer({
     bin: config.llamaServer ?? 'llama-server', model, logFile: join(values.data, 'llama-server.log'),
   });
-  return { url: server.url, label: basename(model, '.gguf'), modelHash: await fileSha256(model), stop: server.stop };
+  let server = await start();
+  return {
+    url: server.url,
+    label: basename(model, '.gguf'),
+    modelHash: await fileSha256(model),
+    stop: () => server.stop(),
+    // If the model server is stopped from outside mid-run, start it again and carry on.
+    restart: async () => {
+      console.log('  the model server stopped answering; starting it again');
+      server.stop();
+      server = await start();
+    },
+  };
 }
 
 async function playOne(store, llama) {
@@ -90,7 +102,9 @@ async function playOne(store, llama) {
   const seed = values.seed ?? game.defaults.seed;
   let player;
   if (values.player === 'llama') {
-    player = llamaPlayer({ url: llama.url, label: llama.label, modelHash: llama.modelHash, briefing: playbook?.briefing ?? '' });
+    player = llamaPlayer({
+      url: llama.url, label: llama.label, modelHash: llama.modelHash, briefing: playbook?.briefing ?? '', recover: llama.restart,
+    });
   } else if (SCRIPTED[values.player]) {
     player = SCRIPTED[values.player](seed);
   } else {

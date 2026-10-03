@@ -27,7 +27,7 @@ const NEEDS_PICKAXE = /^(stone|cobblestone|coal_ore|iron_ore|copper_ore|deepslat
 const NEEDS_STONE_PICKAXE = /^(iron_ore|copper_ore)$/;
 const TOOL_TIERS = ['netherite', 'diamond', 'iron', 'stone', 'golden', 'wooden'];
 const COLLECTIBLE = /_log$|^stone$|^cobblestone$|^coal_ore$|^iron_ore$|^sand$/;
-const NOTICED = /_log$|^stone$|^coal_ore$|^iron_ore$|^water$|^crafting_table$|^sand$/;
+const NOTICED_SINGLY = ['crafting_table', 'stone', 'coal_ore', 'iron_ore', 'furnace'];
 const CRAFTABLE = [
   'planks', 'stick', 'crafting_table', 'wooden_pickaxe', 'wooden_axe', 'wooden_sword',
   'stone_pickaxe', 'stone_axe', 'stone_sword', 'furnace', 'torch',
@@ -70,14 +70,22 @@ export function createAdapter({ root } = {}) {
   const nearest = (name, distance = 32) =>
     bot.findBlock({ matching: (block) => block.name === name, maxDistance: distance });
 
-  // Nearest block of each kind worth knowing about: name -> how many blocks away.
+  // Nearest block of each kind worth knowing about: name -> how many blocks away. Trees are
+  // found in one sweep; the rest are looked for one kind at a time, because stone is so
+  // common underground that in one shared sweep it crowded out the crafting table (run 20
+  // lost sight of its table 23 blocks away and crafted a second one).
   function around() {
     const from = bot.entity.position;
     const best = {};
-    for (const at of bot.findBlocks({ matching: (block) => NOTICED.test(block.name), maxDistance: 32, count: 600 })) {
+    const note = (at) => {
       const name = bot.blockAt(at).name;
       const distance = Math.round(at.distanceTo(from));
       if (best[name] === undefined || distance < best[name]) best[name] = distance;
+    };
+    for (const at of bot.findBlocks({ matching: (block) => block.name.endsWith('_log'), maxDistance: 32, count: 300 })) note(at);
+    for (const name of NOTICED_SINGLY) {
+      const block = nearest(name, 32);
+      if (block) note(block.position);
     }
     return Object.fromEntries(Object.entries(best).sort((a, b) => a[1] - b[1]).slice(0, 8));
   }
@@ -114,8 +122,11 @@ export function createAdapter({ root } = {}) {
   function reachable(name) {
     const from = bot.entity.position;
     const feet = Math.floor(from.y);
+    // Stone and ore can be dug down to with the pickaxe. Run 20 spawned on a hill at y 83
+    // with all the stone more than 6 blocks below, and had nothing to do but explore.
+    const lowest = NEEDS_PICKAXE.test(name) ? feet - 20 : feet - 6;
     return bot.findBlocks({ matching: (block) => block.name === name, maxDistance: 48, count: 64 })
-      .filter((at) => at.y <= feet + 2 && at.y >= feet - 6)
+      .filter((at) => at.y <= feet + 2 && at.y >= lowest)
       .sort((a, b) => a.distanceTo(from) - b.distanceTo(from))[0] ?? null;
   }
 
@@ -144,7 +155,8 @@ export function createAdapter({ root } = {}) {
     const found = recipeFor(want);
     if (!found) return { ok: false, error: `cannot craft ${want} with what you carry` };
     if (found.table && found.table.position.distanceTo(bot.entity.position) > 3.5) {
-      await walkTo(new goals.GoalLookAtBlock(found.table.position, bot.world), 30000, 'walking to the crafting table');
+      // Up to 32 blocks, possibly uphill: run 20 timed out three times at 30 seconds.
+      await walkTo(new goals.GoalNear(found.table.position.x, found.table.position.y, found.table.position.z, 2), 75000, 'walking to the crafting table');
     }
     const before = carried();
     await within(bot.craft(found.recipe, 1, found.table), 15000, `crafting ${want}`);
@@ -258,6 +270,7 @@ export function createAdapter({ root } = {}) {
       movements.scafoldingBlocks = [];
       movements.maxDropDown = 3;
       bot.pathfinder.setMovements(movements);
+      bot.pathfinder.thinkTimeout = 15000;   // the default gave up planning a 24 block uphill walk
       // A game window to watch in: started now that there is a server for it to join.
       if (options.window) {
         say('Opening a game window to watch in.');

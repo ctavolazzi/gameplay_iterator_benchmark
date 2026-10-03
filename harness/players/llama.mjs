@@ -64,14 +64,27 @@ export function buildMessages({ rules, briefing, observation, actions, previous 
   return [{ role: 'system', content: system }, { role: 'user', content: user }];
 }
 
-export function llamaPlayer({ url, label, modelHash = null, briefing = '' }) {
+// recover, if given, brings the model server back when it has stopped answering; the
+// decision is then asked once more. Twice on 2026-10-03 a llama-server was stopped from
+// outside in the middle of a run, and each time the whole run was lost.
+export function llamaPlayer({ url, label, modelHash = null, briefing = '', recover = null }) {
+  const ask = (request) => fetch(`${url}/v1/chat/completions`, request);
   return {
     id: `llama:${label}`,
     modelHash,
     promptVersion: PROMPT_VERSION,
     async decide({ observation, actions, rules, previous = [] }) {
       const messages = buildMessages({ rules, briefing, observation, actions, previous });
-      const res = await fetch(`${url}/v1/chat/completions`, {
+      const res = await ask(this.request(messages, actions)).catch(async (error) => {
+        if (!recover) throw error;
+        await recover();
+        return ask(this.request(messages, actions));
+      });
+      return this.read(res, messages);
+    },
+
+    request(messages, actions) {
+      return {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -94,7 +107,10 @@ export function llamaPlayer({ url, label, modelHash = null, briefing = '' }) {
             },
           },
         }),
-      });
+      };
+    },
+
+    async read(res, messages) {
       if (!res.ok) throw new Error(`llama-server answered ${res.status}: ${brief(await res.text(), 300)}`);
       const json = await res.json();
       const text = json.choices?.[0]?.message?.content ?? '';
