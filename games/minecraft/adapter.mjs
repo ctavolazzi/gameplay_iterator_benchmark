@@ -24,6 +24,8 @@ export const validation = { seeds: [defaults.seed], budget: { ticks: 3000, calls
 const BOT_NAME = 'LocalModel';
 const DIRECTIONS = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
 const NEEDS_PICKAXE = /^(stone|cobblestone|coal_ore|iron_ore|copper_ore|deepslate)$/;
+const NEEDS_STONE_PICKAXE = /^(iron_ore|copper_ore)$/;
+const TOOL_TIERS = ['netherite', 'diamond', 'iron', 'stone', 'golden', 'wooden'];
 const COLLECTIBLE = /_log$|^stone$|^cobblestone$|^coal_ore$|^iron_ore$|^sand$/;
 const NOTICED = /_log$|^stone$|^coal_ore$|^iron_ore$|^water$|^crafting_table$|^sand$/;
 const CRAFTABLE = [
@@ -60,6 +62,11 @@ export function createAdapter({ root } = {}) {
     return out;
   };
   const has = (pattern) => bot.inventory.items().find((item) => pattern.test(item.name));
+  // The best tool of a kind that is carried: a stone pickaxe before a wooden one. Iron ore
+  // dug with a wooden pickaxe drops nothing, so "the first pickaxe found" is not good enough.
+  const bestTool = (ending) => bot.inventory.items()
+    .filter((item) => item.name.endsWith(ending))
+    .sort((a, b) => TOOL_TIERS.findIndex((t) => a.name.startsWith(t)) - TOOL_TIERS.findIndex((t) => b.name.startsWith(t)))[0] ?? null;
   const nearest = (name, distance = 32) =>
     bot.findBlock({ matching: (block) => block.name === name, maxDistance: distance });
 
@@ -115,7 +122,7 @@ export function createAdapter({ root } = {}) {
   async function collect(name) {
     const target = reachable(name);
     if (!target) return { ok: false, error: `no ${name} within reach of the ground nearby` };
-    const tool = NEEDS_PICKAXE.test(name) ? has(/_pickaxe$/) : has(/_axe$/);
+    const tool = bestTool(NEEDS_PICKAXE.test(name) ? '_pickaxe' : '_axe');
     if (tool) await bot.equip(tool, 'hand');
     const before = carried();
     await walkTo(new goals.GoalLookAtBlock(target, bot.world), 45000, `walking to the ${name}`);
@@ -194,6 +201,7 @@ export function createAdapter({ root } = {}) {
     for (const name of Object.keys(seen)) {
       if (!COLLECTIBLE.test(name)) continue;
       if (NEEDS_PICKAXE.test(name) && !has(/_pickaxe$/)) continue;
+      if (NEEDS_STONE_PICKAXE.test(name) && !has(/^(stone|iron|diamond|netherite)_pickaxe$/)) continue;
       const target = reachable(name);
       if (!target) continue;
       const distance = Math.round(target.distanceTo(bot.entity.position));
