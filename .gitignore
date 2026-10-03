@@ -1,0 +1,10 @@
+# Run data: the SQLite database and one JSONL log per run.
+data/
+# Java runtime, game server jars and model files fetched by tools/fetch_runtime.sh.
+runtime/
+# Paths that belong to one machine: where llama-server and claude live.
+config.local.json
+# A playbook the coach wrote that has not passed validation yet.
+playbooks/*/.candidate/
+node_modules/
+.DS_Store
