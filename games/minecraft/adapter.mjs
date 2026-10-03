@@ -54,8 +54,9 @@ export function createAdapter({ root } = {}) {
   let reached = new Set();
   let walked = 0;
   let lastSpot = null;
+  const viewers = new Set();   // people watching in a game window, by player name
 
-  const say = (text) => server?.command(`say ${text}`);
+  const say =(text) => server?.command(`say ${text}`);
   const carried = () => {
     const out = {};
     for (const item of bot.inventory.items()) out[item.name] = (out[item.name] ?? 0) + item.count;
@@ -253,15 +254,27 @@ export function createAdapter({ root } = {}) {
       if (bot) { try { bot.quit(); } catch { /* already gone */ } }
       if (server) await server.stop();
       dead = false; gone = null; pending = []; reached = new Set(); walked = 0; lastSpot = null; lastHealth = 20;
+      viewers.clear();
       server = await startServer({
         root, seed, freshWorld: !options.keepWorld,
         log: (line) => {
           // Anyone else who joins is here to watch: make them a spectator, next to the bot.
           const joined = line.match(/: (\w+) joined the game/);
           if (joined && joined[1] !== BOT_NAME) {
-            server.command(`gamemode spectator ${joined[1]}`);
-            server.command(`tp ${joined[1]} ${BOT_NAME}`);
+            const viewer = joined[1];
+            viewers.add(viewer);
+            server.command(`gamemode spectator ${viewer}`);
+            server.command(`tp ${viewer} ${BOT_NAME}`);
+            // Then put the viewer's camera on the bot, so the view goes wherever it goes, and
+            // let the viewer see in the dark: the bot spends a long time underground with no
+            // torch, and in the first recording that part of the video was black.
+            setTimeout(() => {
+              server?.command(`spectate ${BOT_NAME} ${viewer}`);
+              server?.command(`effect give ${viewer} minecraft:night_vision infinite 0 true`);
+            }, 2500);
           }
+          const left = line.match(/: (\w+) left the game/);
+          if (left) viewers.delete(left[1]);
         },
       });
       bot = mineflayer.createBot({ host: '127.0.0.1', port: server.port, username: BOT_NAME, auth: 'offline', version: MC_VERSION });
@@ -327,6 +340,9 @@ export function createAdapter({ root } = {}) {
     async act(action) {
       const [kind, what] = String(action.name).split(':');
       const before = carried();
+      // Bring every viewer's camera back to the bot. One wrong key (Shift) drops a viewer
+      // out of the bot's view, and getting back in means finding and clicking the bot.
+      for (const viewer of viewers) server.command(`spectate ${BOT_NAME} ${viewer}`);
       say(`chose ${action.name}`);
       let result;
       try {

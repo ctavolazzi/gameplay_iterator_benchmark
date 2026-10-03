@@ -8,3 +8,5 @@ config.local.json
 playbooks/*/.candidate/
 node_modules/
 .DS_Store
+# Screen recordings of runs.
+recordings/

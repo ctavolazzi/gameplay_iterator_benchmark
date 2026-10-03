@@ -178,7 +178,8 @@ function launch() {
   });
   const args = [
     ...plain(manifest.arguments.jvm), '-Xmx2G', manifest.mainClass, ...plain(manifest.arguments.game),
-    '--quickPlayMultiplayer', 'localhost:25565', '--width', '1280', '--height', '720',
+    // 960 by 540 points is 1920 by 1080 pixels on this display: a standard video size.
+    '--quickPlayMultiplayer', 'localhost:25565', '--width', '960', '--height', '540',
   ];
   mkdirSync(join(HOME, 'logs'), { recursive: true });
   const log = join(HOME, 'logs', 'client.log');
