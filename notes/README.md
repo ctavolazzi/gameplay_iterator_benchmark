@@ -8,6 +8,7 @@ For whoever picks this up next: a later Claude session, or a person. Read in thi
 
 | Note | What it covers |
 | --- | --- |
+| [2026-10-03-hidden-bot-fixes.md](2026-10-03-hidden-bot-fixes.md) | The hidden bot gets the real window's fixes; runs 35 to 37; the iron dug with the wrong pickaxe |
 | [2026-10-03-real-window.md](2026-10-03-real-window.md) | The real game window learns to play by keys and mouse: what works, how each part was checked, five faults found only by playing |
 | [runs/2026-10-03-two-coaches.md](runs/2026-10-03-two-coaches.md) | Two Claude coaches, one brief: v005s against v005o, read from the database |
 | [runs/v005s.md](runs/v005s.md), [runs/v005o.md](runs/v005o.md) | Each coach's own notes on its playbook and its three runs |

@@ -12,8 +12,12 @@ import { join } from 'node:path';
 import mineflayer from 'mineflayer';
 import pathfinderPackage from 'mineflayer-pathfinder';
 import vec3Package from 'vec3';
-import { describeText, vocabularyList } from './common.mjs';
+import {
+  BOT_NAME, COLLECTIBLE, CRAFTABLE, DIRECTIONS, NEEDS_PICKAXE, NEEDS_STONE_PICKAXE, NOTICED_SINGLY, TOOL_TIERS,
+  TRUNK_REACH, carriedDiffers, describeText, dropOf, gainEvents, heightAboveGround, runMetrics, vocabularyList,
+} from './common.mjs';
 import { createHandsAdapter } from './hands_adapter.mjs';
+import { counts, parseInventory } from './hands_plan.mjs';
 import { MC_VERSION, startServer } from './server.mjs';
 
 const { pathfinder, Movements, goals } = pathfinderPackage;
@@ -22,23 +26,6 @@ const { Vec3 } = vec3Package;
 export const defaults = { seed: '7040093665601660210', budget: { ticks: 12000, calls: 40 } };
 // A new playbook is tried on one short live run before it is adopted.
 export const validation = { seeds: [defaults.seed], budget: { ticks: 3000, calls: 5 } };
-
-const BOT_NAME = 'LocalModel';
-const DIRECTIONS = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
-const NEEDS_PICKAXE = /^(stone|cobblestone|coal_ore|iron_ore|copper_ore|deepslate)$/;
-const NEEDS_STONE_PICKAXE = /^(iron_ore|copper_ore)$/;
-const TOOL_TIERS = ['netherite', 'diamond', 'iron', 'stone', 'golden', 'wooden'];
-const COLLECTIBLE = /_log$|^stone$|^cobblestone$|^coal_ore$|^iron_ore$|^sand$/;
-const NOTICED_SINGLY = ['crafting_table', 'stone', 'coal_ore', 'iron_ore', 'furnace'];
-const CRAFTABLE = [
-  'planks', 'stick', 'crafting_table', 'wooden_pickaxe', 'wooden_axe', 'wooden_sword',
-  'stone_pickaxe', 'stone_axe', 'stone_sword', 'furnace', 'torch',
-];
-const MILESTONES = [
-  [/_log$/, 'first_log'], [/_planks$/, 'planks'], [/^crafting_table$/, 'crafting_table'], [/^stick$/, 'sticks'],
-  [/^wooden_pickaxe$/, 'wooden_pickaxe'], [/^cobblestone$/, 'cobblestone'], [/^stone_pickaxe$/, 'stone_pickaxe'],
-  [/^coal$/, 'coal'], [/^furnace$/, 'furnace'], [/^raw_iron$/, 'iron'],
-];
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const within = (promise, ms, what) =>
@@ -63,6 +50,43 @@ export function createAdapter({ root, body = 'bot' } = {}) {
   let walked = 0;
   let lastSpot = null;
   const viewers = new Set();   // people watching in a game window, by player name
+  let lines = [];        // what the server has printed, for ask() to read answers from
+
+  // Send the server a command and wait for the log line that answers it.
+  async function ask(command, pattern, ms = 2000) {
+    const from = lines.length;
+    server.command(command);
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+      for (let i = from; i < lines.length; i++) {
+        const hit = lines[i].match(pattern);
+        if (hit) return hit;
+      }
+      await pause(40);
+    }
+    return null;
+  }
+
+  // What the server says is carried, which is the truth. null when it did not answer.
+  async function serverCarried() {
+    const hit = await ask(`data get entity ${BOT_NAME} Inventory`, /entity data: (\[.*\])\s*$/);
+    return hit ? counts(parseInventory(hit[1])) : null;
+  }
+
+  // Where the bot's own list of what it carries differs from the server's: { item: [bot, server] }.
+  // Skills plan from the bot's list, and it has gone stale before (run 24 sticks, run 28 logs).
+  // One difference is given a moment to pass, since a pickup may be on its way.
+  async function staleCarried() {
+    let differs = {};
+    for (let tries = 0; tries < 2; tries++) {
+      const truth = await serverCarried();
+      if (!truth) return null;
+      differs = carriedDiffers(carried(), truth);
+      if (!Object.keys(differs).length) return null;
+      await pause(500);
+    }
+    return differs;
+  }
 
   const say =(text) => server?.command(`say ${text}`);
   const carried = () => {
@@ -128,37 +152,52 @@ export function createAdapter({ root, body = 'bot' } = {}) {
 
   // The nearest block of a kind that someone standing on the ground can reach. Never one up
   // a tree: run 12 took fall damage three times going after logs in the treetops.
+  const nameAt = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name ?? null;
+
   function reachable(name) {
     const from = bot.entity.position;
     const feet = Math.floor(from.y);
+    const found = bot.findBlocks({ matching: (block) => block.name === name, maxDistance: 48, count: 128 });
+    const nearestOf = (list) => list.sort((a, b) => a.distanceTo(from) - b.distanceTo(from))[0] ?? null;
+    if (name.endsWith('_log')) {
+      // The foot of a trunk, as a person would take it, and not a branch up in the leaves:
+      // the real window learned this first, and both bodies should fell a tree the same way.
+      const trunk = nearestOf(found.filter((at) => heightAboveGround(nameAt, at) <= TRUNK_REACH));
+      if (trunk) return trunk;
+    }
     // Stone and ore can be dug down to with the pickaxe. Run 20 spawned on a hill at y 83
     // with all the stone more than 6 blocks below, and had nothing to do but explore.
     const lowest = NEEDS_PICKAXE.test(name) ? feet - 20 : feet - 6;
-    return bot.findBlocks({ matching: (block) => block.name === name, maxDistance: 48, count: 64 })
-      .filter((at) => at.y <= feet + 2 && at.y >= lowest)
-      .sort((a, b) => a.distanceTo(from) - b.distanceTo(from))[0] ?? null;
+    return nearestOf(found.filter((at) => at.y <= feet + 2 && at.y >= lowest));
   }
 
   async function collect(name) {
     const target = reachable(name);
     if (!target) return { ok: false, error: `no ${name} within reach of the ground nearby` };
-    const tool = bestTool(NEEDS_PICKAXE.test(name) ? '_pickaxe' : '_axe');
-    if (tool) await bot.equip(tool, 'hand');
     const before = carried();
     await walkTo(new goals.GoalLookAtBlock(target, bot.world), 45000, `walking to the ${name}`);
     await settle();
+    // The tool goes in hand after the walk, not before it. The pathfinder digs its own way
+    // through and puts what suits that digging in hand, so a tool chosen before the walk may
+    // not be the one held at the end of it. Run 36 dug its first iron ore with the wooden
+    // pickaxe, which drops nothing: the stone pickaxe showed 1 use after the second dig.
+    const tool = bestTool(NEEDS_PICKAXE.test(name) ? '_pickaxe' : '_axe');
+    if (tool) await bot.equip(tool, 'hand');
     try {
       await within(bot.dig(bot.blockAt(target)), 40000, `digging the ${name}`);
     } catch (error) {
       bot.stopDigging();
       throw error;
     }
-    // Pick up what dropped. Walk to where the block was, and if nothing has arrived, to the
+    // Pick up what dropped. Walk to where the block was, and if it has not arrived, to the
     // nearest dropped item: ore dug from a wall can fall out of reach of that spot (run 22
-    // dug iron ore and picked nothing up).
-    const gained = () => Object.entries(carried()).some(([item, count]) => count > (before[item] ?? 0));
+    // dug iron ore and picked nothing up). The dig is done when what the block leaves behind
+    // is carried, not when anything at all was gained: dirt and cobblestone dug on the way
+    // used to end the pickup and leave the ore's own drop lying there (run 28, iron and coal).
+    const wanted = dropOf(name);
+    const gained = () => (carried()[wanted] ?? 0) > (before[wanted] ?? 0);
     await walkTo(new goals.GoalNear(target.x, target.y, target.z, 1), 10000, 'picking it up').catch(() => {});
-    for (let waited = 0; waited < 4 && !gained(); waited++) {
+    for (let waited = 0; waited < 6 && !gained(); waited++) {
       await pause(600);
       if (gained()) break;
       const drop = bot.nearestEntity((entity) => entity.name === 'item' && entity.position.distanceTo(bot.entity.position) < 8);
@@ -167,7 +206,9 @@ export function createAdapter({ root, body = 'bot' } = {}) {
     await pause(400);
     const after = carried();
     const got = Object.fromEntries(Object.keys(after).filter((k) => after[k] > (before[k] ?? 0)).map((k) => [k, after[k] - (before[k] ?? 0)]));
-    return Object.keys(got).length ? { ok: true, got } : { ok: false, error: `dug the ${name} but picked nothing up` };
+    if (got[wanted]) return { ok: true, got };
+    const also = Object.keys(got).length ? ` (picked up on the way: ${Object.keys(got).join(', ')})` : '';
+    return { ok: false, error: `dug the ${name} but did not pick up its ${wanted}${also}` };
   }
 
   async function craft(want) {
@@ -262,10 +303,15 @@ export function createAdapter({ root, body = 'bot' } = {}) {
       if (bot) { try { bot.quit(); } catch { /* already gone */ } }
       if (server) await server.stop();
       dead = false; gone = null; pending = []; reached = new Set(); walked = 0; lastSpot = null; lastHealth = 20;
+      lines = [];
       viewers.clear();
       server = await startServer({
         root, seed, freshWorld: !options.keepWorld,
         log: (line) => {
+          lines.push(line);
+          // The game is its own judge: its advancements arrive as events, as in the real window.
+          const advancement = line.match(new RegExp(`${BOT_NAME} has (?:made the advancement|completed the challenge|reached the goal) \\[(.+?)\\]`));
+          if (advancement) pending.push({ kind: 'advancement', detail: { name: advancement[1] } });
           // Anyone else who joins is here to watch: make them a spectator, next to the bot.
           const joined = line.match(/: (\w+) joined the game/);
           if (joined && joined[1] !== BOT_NAME) {
@@ -363,18 +409,9 @@ export function createAdapter({ root, body = 'bot' } = {}) {
         result = { ok: false, error: String(error?.message ?? error).slice(0, 160) };
       }
       const events = pending.splice(0);
-      const after = carried();
-      for (const [item, count] of Object.entries(after)) {
-        if (count <= (before[item] ?? 0)) continue;
-        events.push({ kind: 'item', detail: { item, count } });
-        for (const [pattern, milestone] of MILESTONES) {
-          if (pattern.test(item) && !reached.has(milestone)) {
-            reached.add(milestone);
-            events.push({ kind: 'milestone', detail: { name: milestone } });
-            say(`milestone: ${milestone}`);
-          }
-        }
-      }
+      events.push(...gainEvents(before, carried(), reached, (milestone) => say(`milestone: ${milestone}`)));
+      const stale = dead || gone ? null : await staleCarried().catch(() => null);
+      if (stale) events.push({ kind: 'stale_carried', detail: stale });
       if (result.placed && !reached.has('table_placed')) {
         reached.add('table_placed');
         events.push({ kind: 'milestone', detail: { name: 'table_placed' } });
@@ -391,18 +428,7 @@ export function createAdapter({ root, body = 'bot' } = {}) {
 
     ended: () => (dead ? 'death' : gone ? 'disconnected' : null),
 
-    metrics({ events }) {
-      const items = new Set();
-      const firstTicks = {};
-      let damage = 0;
-      let milestones = 0;
-      for (const e of events) {
-        if (e.kind === 'item') items.add(e.detail.item);
-        if (e.kind === 'damage') damage += e.detail.amount;
-        if (e.kind === 'milestone') { milestones += 1; firstTicks[`tick_of_${e.detail.name}`] = e.tick; }
-      }
-      return { unique_items: items.size, milestones, distance_walked: Math.round(walked), damage_taken: Math.round(damage * 10) / 10, ...firstTicks };
-    },
+    metrics: ({ events }) => runMetrics(events, walked),
 
     // The rules in words and the kinds of action are the same for both bodies.
     describe: describeText,

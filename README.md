@@ -204,6 +204,9 @@ reach of the ground and dig it), `craft:<item>`, `place:crafting_table` and
 | 30 | Qwen3.5-0.8B | v005s | 10 | 11 milestones by decision 6, tick 3300. No failure, no damage. |
 | 31 | Qwen3.5-0.8B | v005o | 16 | 11 milestones by decision 7, tick 4116. No failure, no damage. |
 | 32 | Qwen3.5-0.8B | v005o | 16 | 11 milestones by decision 8, tick 3830. No failure, no damage. |
+| 35 | Qwen3.5-0.8B | v005s | 16 | 11 milestones by decision 6, tick 3875. No failure, no damage. The baseline for the adapter changes below. |
+| 36 | Qwen3.5-0.8B | v005s | 8 | Changed adapter. 11 milestones by decision 6, tick 4220. The first iron dig was made with the wooden pickaxe: found from this run. |
+| 37 | Qwen3.5-0.8B | v005s | 7 | Tool put in hand after the walk. 11 milestones by decision 6, tick 5757 on a busy machine. Iron in one dig. |
 
 v005s and v005o were written the same hour by two Claude subagents (a Sonnet 5.5 and an
 Opus 5.5) from the same brief, each without reading the other, each with three live runs.
@@ -212,6 +215,12 @@ takes 6 and about 3300, v005o 7 to 8 and about 3800 to 4100. The cost of that sp
 the model is offered a single option at 13 to 15 of its 16 decisions.
 [notes/runs/2026-10-03-two-coaches.md](notes/runs/2026-10-03-two-coaches.md) has the table,
 read from the database, and what it does and does not show.
+
+Runs 35 to 37 are about the hidden bot's own code, not the playbook: it now takes logs from
+the foot of a trunk, counts a dig as done only when the block's own drop is carried, holds
+the right pickaxe when it digs, and stores the game's advancements as events.
+[notes/2026-10-03-hidden-bot-fixes.md](notes/2026-10-03-hidden-bot-fixes.md) has what was
+measured.
 
 What that shows: with raw actions or a long briefing, these 0.5 GB models repeat one
 command for a whole run. v003 and v004 work because each skill is a whole job and the menu

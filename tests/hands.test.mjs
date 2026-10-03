@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RECIPES, dropOf, heightAboveGround } from '../games/minecraft/common.mjs';
+import { RECIPES, carriedDiffers, dropOf, heightAboveGround } from '../games/minecraft/common.mjs';
 import { aim, bmpHeight, bmpPixel, canMake, clickPlan, counts, isPanelGrey, parseInventory, screenLayout, step, turn } from '../games/minecraft/hands_plan.mjs';
 
 const near = (a, b, tolerance = 0.01) => assert.ok(Math.abs(a - b) <= tolerance, `${a} is not within ${tolerance} of ${b}`);
@@ -161,4 +161,12 @@ test('a dig is finished by what the block leaves behind', () => {
   assert.equal(dropOf('iron_ore'), 'raw_iron');
   assert.equal(dropOf('coal_ore'), 'coal');
   assert.equal(dropOf('oak_log'), 'oak_log');
+});
+
+test('two counts of what is carried: where they differ, and nothing when they agree', () => {
+  const bot = { oak_log: 1, stick: 2, dirt: 3 };
+  assert.deepEqual(carriedDiffers(bot, { oak_log: 1, stick: 2, dirt: 3 }), {});
+  // The bot has lost sight of 3 logs and thinks it still has dirt it dropped.
+  assert.deepEqual(carriedDiffers(bot, { oak_log: 4, stick: 2 }), { oak_log: [1, 4], dirt: [3, 0] });
+  assert.deepEqual(carriedDiffers({}, { coal: 1 }), { coal: [0, 1] });
 });

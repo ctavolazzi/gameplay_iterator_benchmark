@@ -82,5 +82,3 @@ second adapter.
 - One seed. Nothing here is known to hold on another world.
 - Runs are played in real time, so two runs from the same seed differ once mobs act.
 - The pathfinder digs through terrain, so cobblestone and dirt are collected unasked.
-- `games/minecraft/adapter.mjs` still carries its own copies of constants that now live in
-  `games/minecraft/common.mjs`. They should be one.

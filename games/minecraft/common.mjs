@@ -111,6 +111,15 @@ export function gainEvents(before, after, reached, announce = () => {}) {
   return events;
 }
 
+// Where two counts of what is carried differ: { item: [first, second] }. Empty when they agree.
+export function carriedDiffers(first, second) {
+  const out = {};
+  for (const item of new Set([...Object.keys(first), ...Object.keys(second)])) {
+    if ((first[item] ?? 0) !== (second[item] ?? 0)) out[item] = [first[item] ?? 0, second[item] ?? 0];
+  }
+  return out;
+}
+
 export function runMetrics(events, walked) {
   const items = new Set();
   const firstTicks = {};
