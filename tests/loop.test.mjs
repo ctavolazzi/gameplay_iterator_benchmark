@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertAdapter } from '../harness/adapter.mjs';
 import { coachRun, parseCoachReply } from '../harness/coach.mjs';
-import { llamaPlayer } from '../harness/players/llama.mjs';
+import { llamaPlayer, startLlamaServer } from '../harness/players/llama.mjs';
 import { fromList, seededRandom } from '../harness/players/scripted.mjs';
 import { replayRun } from '../harness/replay.mjs';
 import { runOnce } from '../harness/runner.mjs';
@@ -142,6 +142,20 @@ test('the model player sends the offered options and reads the choice', async ()
     assert.deepEqual((await player.decide(input)).action, { name: null }, 'an answer that is not the JSON asked for is no action');
   } finally {
     server.close();
+  }
+});
+
+test('a model server is never started on a port that already has one', async () => {
+  const other = createServer((req, res) => res.end('ok'));
+  await new Promise((resolve) => other.listen(0, '127.0.0.1', resolve));
+  try {
+    // bin is a file that does not exist: the refusal has to come before anything is started.
+    await assert.rejects(
+      startLlamaServer({ bin: '/nonexistent/llama-server', model: 'none.gguf', port: other.address().port }),
+      /already has a server on it/,
+    );
+  } finally {
+    other.close();
   }
 });
 

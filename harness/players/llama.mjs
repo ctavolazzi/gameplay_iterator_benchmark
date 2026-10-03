@@ -20,6 +20,11 @@ export function fileSha256(path) {
 
 // Start llama-server on the CPU with thinking off, and wait until it answers.
 export async function startLlamaServer({ bin, model, port = 8089, threads = 4, context = 8192, logFile }) {
+  // If something already answers on this port, stop here. Otherwise the new server would
+  // fail to bind, the health check below would be answered by the old one, and the run
+  // would be played by whatever model that one holds while recording this one's name.
+  const taken = await fetch(`http://127.0.0.1:${port}/health`).then(() => true, () => false);
+  if (taken) throw new Error(`port ${port} already has a server on it; another run may be using it`);
   const out = logFile ? openSync(logFile, 'a') : 'ignore';
   const child = spawn(bin, [
     '-m', model, '--host', '127.0.0.1', '--port', String(port), '-c', String(context),
