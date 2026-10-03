@@ -1,0 +1,310 @@
+<!doctype html>
+<!-- gameplay_iterator_benchmark / docs/plan.html v0.0.2, 2026-10-02. Proposal only: nothing described here is built yet. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gameplay Iterator Benchmark</title>
+<meta name="description" content="A game-agnostic harness where a local model learns to play a game on CT's machine, one logged run at a time, with Claude as the harness builder and judge. Minecraft is the first game.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#f5f0e6;--cream-dark:#ede6d8;--paper:#faf8f3;--chocolate:#4a2c2a;--choc-mid:#6b4423;
+  --choc-light:#8b5a2b;--burnt-orange:#e07b3c;--rust:#c2410c;--teal:#0d9488;--gold:#d97706;
+  --line:#d4c4a8;--line-dark:#b8a88a;--muted:#7a6b5d;--ink:#3a312b;--sage:#3a7a5c;--steel:#1e76a2;
+  --slate:#4e5898;--pine:#1a5c4e;--max:760px;
+  --shadow-hard:4px 4px 0 var(--chocolate);--shadow-hover:6px 6px 0 var(--burnt-orange);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:Outfit,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.7}
+code,pre,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+main{max-width:var(--max);margin:0 auto;padding:0 16px 96px}
+header.hero{border-bottom:3px solid var(--chocolate);background:linear-gradient(180deg,var(--cream) 0%,var(--cream-dark) 100%)}
+.hero-inner{max-width:var(--max);margin:0 auto;padding:48px 16px 36px}
+.kicker{display:inline-block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--paper);background:var(--chocolate);padding:4px 10px;border:2px solid var(--chocolate)}
+h1{font-size:clamp(34px,7vw,56px);line-height:1.05;margin:16px 0 10px;font-weight:900;letter-spacing:-.02em;color:var(--chocolate)}
+.lede{font-size:20px;max-width:640px;margin:0 0 18px;color:var(--ink)}
+.status{display:flex;flex-wrap:wrap;gap:8px;font-size:13px}
+.badge{border:2px solid var(--chocolate);background:var(--paper);padding:2px 10px;font-weight:700}
+.badge.warn{background:#fde9d9;border-color:var(--rust);color:var(--rust)}
+h2{font-size:28px;margin:56px 0 12px;font-weight:800;color:var(--chocolate);letter-spacing:-.01em;border-bottom:3px solid var(--burnt-orange);display:inline-block;padding-bottom:2px}
+h3{font-size:19px;margin:28px 0 8px;font-weight:700;color:var(--chocolate)}
+p{margin:0 0 14px}
+a{color:var(--rust);text-decoration:underline;text-underline-offset:3px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:18px;margin:18px 0}
+.card{background:var(--paper);border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);padding:16px 18px;transition:transform .15s,box-shadow .15s}
+.card:hover{transform:translate(-2px,-2px);box-shadow:var(--shadow-hover)}
+.card h3{margin:0 0 6px;font-size:18px}
+.card .who{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--burnt-orange)}
+.card p{margin:6px 0 0;font-size:15px}
+.pull{border-left:6px solid var(--burnt-orange);background:var(--paper);padding:14px 18px;margin:22px 0;font-size:18px;font-weight:600;color:var(--chocolate)}
+ol.steps{counter-reset:s;list-style:none;padding:0;margin:14px 0}
+ol.steps li{counter-increment:s;position:relative;padding:10px 0 10px 56px;border-bottom:1px solid var(--line)}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:10px;width:38px;height:38px;border:3px solid var(--chocolate);background:var(--burnt-orange);color:var(--paper);font-weight:900;display:grid;place-items:center;box-shadow:3px 3px 0 var(--chocolate)}
+ol.steps b{color:var(--chocolate)}
+table{width:100%;border-collapse:collapse;margin:14px 0 20px;background:var(--paper);border:3px solid var(--chocolate);font-size:15px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+th{background:var(--cream-dark);font-weight:700;color:var(--chocolate);border-bottom:2px solid var(--chocolate)}
+tr:last-child td{border-bottom:0}
+td.k{white-space:nowrap;font-weight:700;color:var(--chocolate)}
+.ok{color:var(--sage);font-weight:700}.no{color:var(--rust);font-weight:700}
+pre{background:var(--chocolate);color:var(--cream);padding:14px 16px;border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);overflow-x:auto;font-size:13.5px;line-height:1.55;margin:14px 0 22px}
+.diagram{background:var(--paper);border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);padding:10px;margin:18px 0 8px;overflow-x:auto}
+.diagram svg{display:block;width:100%;height:auto;min-width:560px}
+.caption{font-size:13.5px;color:var(--muted);margin:0 0 18px}
+.questions li{margin-bottom:10px}
+.foot{margin-top:72px;padding-top:18px;border-top:3px solid var(--chocolate);font-size:13px;color:var(--muted)}
+.foot a{color:var(--muted)}
+.src{font-size:14px}
+.src li{margin-bottom:4px}
+@keyframes flow{to{stroke-dashoffset:-40}}
+.flow{stroke-dasharray:8 6;animation:flow 1.6s linear infinite}
+@media (prefers-reduced-motion:reduce){.flow{animation:none}}
+@media (max-width:520px){ol.steps li{padding-left:50px}}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-inner">
+    <span class="kicker">Proposal, 2026-10-02</span>
+    <h1>Gameplay Iterator Benchmark</h1>
+    <p class="lede">A game-agnostic harness where a <strong>local model</strong> plays a game on CT's machine, one logged run at a time, and gets measurably better. Claude builds the harness and grades the runs. It does not play. <strong>Minecraft is the first game.</strong></p>
+    <div class="status">
+      <span class="badge warn">Nothing built yet</span>
+      <span class="badge"><a href="https://github.com/ctavolazzi/gameplay_iterator_benchmark">ctavolazzi/gameplay_iterator_benchmark</a></span>
+      <span class="badge">First game: Minecraft</span>
+      <span class="badge">Machine: 2015 MacBook Pro, 16 GB</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<h2>The idea in one line</h2>
+<div class="pull">Same seed, same world, every time. A local model decides what to do. Everything it does is logged, stored, scored, and fed back into its next attempt.</div>
+<p>The point is a benchmark that reacts to itself. Run number 40 should beat run number 1 not because a bigger model was swapped in, but because the code around the same small model learned what works in that world.</p>
+<p>The harness does not know what Minecraft is. It knows how to reset a world, run an agent for a budget, store and score the result, and feed it forward. Everything Minecraft-specific lives in one adapter, so a second game is a second adapter, not a second harness.</p>
+
+<h2>Who does what</h2>
+<div class="cards">
+  <div class="card">
+    <div class="who">The player</div>
+    <h3>Local model</h3>
+    <p>Runs on llama.cpp on this Mac. Reads the bot's view of the world and picks the next action. Starting model: Jan-v3.5-4B, the only chat model already on disk.</p>
+  </div>
+  <div class="card">
+    <div class="who">The builder and judge</div>
+    <h3>Claude</h3>
+    <p>Writes the runner, the bot, the database and the evaluator. After each run it is called headlessly (<code>claude -p</code>) with the log and a rubric, and returns scores and suggestions. It never steers the bot.</p>
+  </div>
+  <div class="card">
+    <div class="who">The scribe</div>
+    <h3>Icarus harness</h3>
+    <p>After each run the local model writes the run up, and the daily-note harness (SimpleAgentOS) files it into the Obsidian vault. Documentation is local-model output, not Claude's.</p>
+  </div>
+</div>
+
+<h2>The three goals</h2>
+<h3>Goal 1: the benchmark</h3>
+<p>One good starting seed, found online and verified in the generated world. A script that plays that world deterministically, logs every step, stores the run in a database, then calls Claude to evaluate the run. The database is what makes two runs comparable.</p>
+<h3>Goal 2: documentation by the local model</h3>
+<p>Each run becomes a note in <code>~/Documents/Personal-Remote-Vault</code>, written by the local model through llama.cpp and filed by the Icarus daily-note harness.</p>
+<h3>Goal 3: the loop</h3>
+<p>A runner that fires runs one after another. Each run's evaluation changes what the next run starts with, so play climbs over time. Sequential first; parallel only if it ever earns its place.</p>
+
+<h2>Game-agnostic by design</h2>
+<table>
+  <tr><th>The harness (shared by every game)</th><th>A game adapter (one per game, Minecraft first)</th></tr>
+  <tr><td>The runner: reset, run for a budget, store, judge, improve, document, repeat</td><td>How to reset a world to a known state (for Minecraft: regenerate from the seed)</td></tr>
+  <tr><td>The database and the raw run logs</td><td>What the agent observes, and the actions it can take</td></tr>
+  <tr><td>The evaluator call to Claude and the rubric format</td><td>The events and milestones that mean progress in this game</td></tr>
+  <tr><td>The skill library and memory, versioned per game</td><td>The automatic metrics, and what counts as a death or an end</td></tr>
+  <tr><td>The vault documentation step</td><td>How to let CT watch (for Minecraft: join the same server)</td></tr>
+</table>
+<p>Layout that follows: <code>harness/</code> for the shared parts, <code>games/minecraft/</code> for the first adapter, and a one-line config that says which game a run uses. Nothing in <code>harness/</code> may import from a game folder.</p>
+
+<h2>How it fits together</h2>
+<div class="diagram">
+<svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" font-family="Outfit,system-ui,sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4a2c2a"/>
+    </marker>
+  </defs>
+  <!-- Runner -->
+  <rect x="20" y="20" width="720" height="40" fill="#4a2c2a"/>
+  <text x="380" y="46" text-anchor="middle" fill="#f5f0e6" font-weight="800" font-size="15">iterate.mjs  (the runner, game-agnostic: reset, run for a fixed budget, evaluate, improve, repeat)</text>
+
+  <!-- Game adapter frame -->
+  <rect x="30" y="92" width="452" height="116" fill="none" stroke="#8b5a2b" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="82" y="105" fill="#8b5a2b" font-weight="700" font-size="12">game adapter: Minecraft is the first game</text>
+
+  <!-- Server -->
+  <rect x="40" y="110" width="200" height="86" fill="#faf8f3" stroke="#4a2c2a" stroke-width="3"/>
+  <rect x="46" y="116" width="200" height="86" fill="none" stroke="#4a2c2a" stroke-width="3" opacity=".25"/>
+  <text x="140" y="140" text-anchor="middle" font-weight="800" fill="#4a2c2a" font-size="15">Minecraft server</text>
+  <text x="140" y="160" text-anchor="middle" fill="#3a312b">Java 21, fixed version</text>
+  <text x="140" y="178" text-anchor="middle" fill="#c2410c" font-weight="700">world from ONE seed</text>
+
+  <!-- Bot -->
+  <rect x="290" y="110" width="180" height="86" fill="#faf8f3" stroke="#4a2c2a" stroke-width="3"/>
+  <text x="380" y="140" text-anchor="middle" font-weight="800" fill="#4a2c2a" font-size="15">Mineflayer bot</text>
+  <text x="380" y="160" text-anchor="middle" fill="#3a312b">headless Node client</text>
+  <text x="380" y="178" text-anchor="middle" fill="#3a312b">observe, act, log</text>
+
+  <!-- Local model -->
+  <rect x="520" y="110" width="220" height="86" fill="#faf8f3" stroke="#4a2c2a" stroke-width="3"/>
+  <text x="630" y="140" text-anchor="middle" font-weight="800" fill="#4a2c2a" font-size="15">Local model</text>
+  <text x="630" y="160" text-anchor="middle" fill="#3a312b">llama-server, temperature 0</text>
+  <text x="630" y="178" text-anchor="middle" fill="#0d9488" font-weight="700">+ skill library and memory</text>
+
+  <!-- CT spectator -->
+  <rect x="40" y="226" width="200" height="44" fill="#ede6d8" stroke="#b8a88a" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="140" y="245" text-anchor="middle" fill="#7a6b5d" font-weight="700">CT's Minecraft client</text>
+  <text x="140" y="261" text-anchor="middle" fill="#7a6b5d" font-size="12">joins the same server to watch</text>
+
+  <!-- DB -->
+  <rect x="290" y="290" width="180" height="70" fill="#faf8f3" stroke="#4a2c2a" stroke-width="3"/>
+  <text x="380" y="316" text-anchor="middle" font-weight="800" fill="#4a2c2a" font-size="15">SQLite + JSONL</text>
+  <text x="380" y="336" text-anchor="middle" fill="#3a312b">runs, steps, events,</text>
+  <text x="380" y="352" text-anchor="middle" fill="#3a312b">metrics, evaluations</text>
+
+  <!-- Claude evaluator -->
+  <rect x="520" y="290" width="220" height="70" fill="#faf8f3" stroke="#4a2c2a" stroke-width="3"/>
+  <text x="630" y="316" text-anchor="middle" font-weight="800" fill="#4a2c2a" font-size="15">Claude evaluator</text>
+  <text x="630" y="336" text-anchor="middle" fill="#3a312b">claude -p, rubric in, scores out</text>
+  <text x="630" y="352" text-anchor="middle" fill="#3a312b">suggestions for the next run</text>
+
+  <!-- Vault -->
+  <rect x="40" y="290" width="200" height="70" fill="#faf8f3" stroke="#4a2c2a" stroke-width="3"/>
+  <text x="140" y="316" text-anchor="middle" font-weight="800" fill="#4a2c2a" font-size="15">Obsidian vault</text>
+  <text x="140" y="336" text-anchor="middle" fill="#3a312b">run note written by the</text>
+  <text x="140" y="352" text-anchor="middle" fill="#3a312b">local model, filed by Icarus</text>
+
+  <!-- arrows -->
+  <path d="M240 153 H290" stroke="#4a2c2a" stroke-width="3" fill="none" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <path d="M470 153 H520" stroke="#4a2c2a" stroke-width="3" fill="none" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <path d="M140 196 V226" stroke="#b8a88a" stroke-width="2" fill="none" stroke-dasharray="6 4"/>
+  <path class="flow" d="M380 196 V290" stroke="#e07b3c" stroke-width="3" fill="none" marker-end="url(#arr)"/>
+  <path class="flow" d="M470 325 H520" stroke="#e07b3c" stroke-width="3" fill="none" marker-end="url(#arr)"/>
+  <path class="flow" d="M700 290 V215 Q700 196 681 196 H660" stroke="#0d9488" stroke-width="3" fill="none" marker-end="url(#arr)"/>
+  <path class="flow" d="M290 325 H240" stroke="#e07b3c" stroke-width="3" fill="none" marker-end="url(#arr)"/>
+  <path d="M380 60 V110" stroke="#4a2c2a" stroke-width="3" fill="none" marker-end="url(#arr)"/>
+  <path d="M60 60 V110" stroke="#4a2c2a" stroke-width="3" fill="none" marker-end="url(#arr)"/>
+
+  <text x="392" y="248" fill="#c2410c" font-weight="700" font-size="12">run log</text>
+  <text x="474" y="318" fill="#c2410c" font-weight="700" font-size="12">judge</text>
+  <text x="708" y="250" fill="#0d9488" font-weight="700" font-size="12">improve</text>
+  <text x="246" y="318" fill="#c2410c" font-weight="700" font-size="12">document</text>
+
+  <!-- legend -->
+  <text x="20" y="400" fill="#7a6b5d" font-size="12">Orange: the run's output travelling. Teal: the one thing that changes between runs, the skill library and memory.</text>
+  <text x="20" y="418" fill="#7a6b5d" font-size="12">The model's weights never change.</text>
+</svg>
+</div>
+<p class="caption">The bot never touches the game window. It is a headless client on a local server. CT's installed Minecraft is the spectator seat, not the thing being driven.</p>
+
+<h2>One run, start to finish</h2>
+<ol class="steps">
+  <li><b>Reset.</b> Delete the world folder and start the server from the seed. World generation is fully determined by the seed, so the terrain, villages and ores are identical every run.</li>
+  <li><b>Load the player.</b> Start <code>llama-server</code> with the pinned model file, temperature 0, and the current version of the skill library and memory.</li>
+  <li><b>Join.</b> The Mineflayer bot connects and starts the loop: observe (position, inventory, nearby blocks and entities, health, time of day), ask the model, execute the chosen action, log everything.</li>
+  <li><b>Stop at the budget.</b> A fixed number of game ticks and model calls, whichever comes first. Death ends the run early and is recorded as such.</li>
+  <li><b>Store.</b> Every step and event goes to SQLite and a raw JSONL file, with the exact inputs (seed, server version, commit, model hash, prompt version) so the run can be reproduced and diffed.</li>
+  <li><b>Judge.</b> The runner calls <code>claude -p</code> with the log and the rubric. Scores and concrete suggestions go into the database.</li>
+  <li><b>Improve.</b> The local model reads the evaluation and updates its own skill library and memory: which action code worked, what to avoid, what to try first next time.</li>
+  <li><b>Document.</b> The local model writes the run note; the Icarus harness files it into the vault's daily note.</li>
+  <li><b>Repeat.</b> Next run starts at step 1 with the new skill library.</li>
+</ol>
+
+<h2>What "deterministic" means here</h2>
+<table>
+  <tr><th>Fixed between runs</th><th>Not fixed, so it is recorded</th></tr>
+  <tr><td>World seed and server version (terrain, structures, ores)</td><td>Mob movement and combat, which use the server's own randomness</td></tr>
+  <tr><td>Code commit, model file hash, prompt version, temperature 0</td><td>Wall-clock timing: the bot is throttled to game ticks, not real seconds</td></tr>
+  <tr><td>Action budget and tick budget</td><td>The skill library and memory, which are supposed to change</td></tr>
+</table>
+<p>So: identical inputs give the same world and the same decisions at the same ticks. Where the game itself rolls dice, the roll is logged. A run can always be replayed from its stored inputs and compared step by step.</p>
+
+<h2>What "gets better" means</h2>
+<p>The model's weights do not change. Fine-tuning a model on a 2015 Intel laptop is not realistic, and a benchmark where the model is swapped out is a different benchmark. What evolves is the layer around the model, in the pattern the <a href="https://arxiv.org/pdf/2305.16291">Voyager</a> paper showed works:</p>
+<ul>
+  <li><strong>Skill library:</strong> small, tested action programs (get wood, craft a table, find stone, place a bed) that the model wrote or chose, kept only if they succeeded in a run.</li>
+  <li><strong>Memory:</strong> notes about this seed: where the village is, where the cave was, what killed it last time.</li>
+  <li><strong>Curriculum:</strong> the next milestone to attempt, chosen from what the last evaluation said was within reach.</li>
+</ul>
+<p>Every version of that layer is stored, so any run can be matched to the exact skill library it played with.</p>
+
+<h2>How a run is scored</h2>
+<table>
+  <tr><th>Metric</th><th>Measured from</th><th>Why it matters</th></tr>
+  <tr><td class="k">Unique items</td><td>inventory events</td><td>Voyager's headline number; breadth of what the bot can get</td></tr>
+  <tr><td class="k">Milestones</td><td>first tick each is reached</td><td>log, crafting table, wooden tools, stone tools, furnace, iron, bed</td></tr>
+  <tr><td class="k">Distance explored</td><td>position log</td><td>does it leave spawn with a purpose</td></tr>
+  <tr><td class="k">Survival</td><td>death event, health log</td><td>did it see night, did it survive it</td></tr>
+  <tr><td class="k">Efficiency</td><td>model calls per milestone</td><td>is it learning, or flailing more cheaply</td></tr>
+  <tr><td class="k">Rubric score</td><td>Claude's evaluation</td><td>judgement on decision quality, with written reasons</td></tr>
+</table>
+<p>Automatic metrics come straight from the log and cannot be argued with. The rubric sits on top and explains them.</p>
+
+<h2>The database</h2>
+<pre>runs            id, game, started_at, seed, game_version, commit,
+                model_hash, prompt_version, skill_library_version,
+                budget_ticks, budget_calls, ended_reason
+steps           run_id, tick, observation_json, prompt_hash,
+                response_json, action, result
+events          run_id, tick, kind (item, milestone, damage,
+                death, chat), detail_json
+metrics         run_id, name, value
+evaluations     run_id, evaluator, rubric_version, score,
+                reasons_md, suggestions_json
+skill_versions  version, parent_version, created_by_run,
+                diff_summary</pre>
+<p>One SQLite file in the repo plus one JSONL per run. Nothing here needs a server. Every run row carries its game, and event kinds and milestone names are defined by the adapter, so Minecraft runs and a future game's runs share one database without sharing a vocabulary.</p>
+
+<h2>Open source this builds on</h2>
+<table>
+  <tr><th>Project</th><th>What it gives us</th><th>What it does not</th></tr>
+  <tr><td class="k"><a href="https://cdn.jsdelivr.net/npm/mineflayer@4.37.1/package.json">Mineflayer</a></td><td>Headless Minecraft client in Node (4.37.1 needs Node 22, which is installed). Pathfinding via mineflayer-pathfinder.</td><td>No agent loop, no logging, no scoring</td></tr>
+  <tr><td class="k"><a href="https://github.com/yoava7/mindcraft">Mindcraft</a></td><td>A proven set of LLM action primitives on Mineflayer; talks to local models over an OpenAI-style endpoint, which llama-server provides; purpose-tuned Andy-4 models exist</td><td>No determinism, no database, its own loop we would have to work around</td></tr>
+  <tr><td class="k"><a href="https://arxiv.org/pdf/2305.16291">Voyager</a></td><td>The skill library and curriculum design, and the benchmark metrics</td><td>Its code is tied to an older stack and GPT-4; we take the design, not the code</td></tr>
+</table>
+<p>Current call: a thin runner of our own on Mineflayer, borrowing Mindcraft's primitives and Voyager's design, because determinism, logging and the database are the whole point and neither framework provides them. To be re-checked once Mindcraft has been run against the local model.</p>
+
+<h2>What is on this machine right now</h2>
+<table>
+  <tr><td class="k">Hardware</td><td>i7-4770HQ, 16 GB RAM, Intel Iris Pro, macOS 12.7.6. Server (about 2 GB) plus bot plus a 4B model (about 3 GB) fits. Running the Minecraft client at the same time will be tight.</td></tr>
+  <tr><td class="k">Local model</td><td><span class="ok">llama-server and llama-cli are built.</span> One chat model on disk: Jan-v3.5-4B Q4, 3.0 GB, in Jan's data folder. No Ollama.</td></tr>
+  <tr><td class="k">Java</td><td><span class="no">None on the PATH.</span> A 1.21 server needs Java 21, about 180 MB.</td></tr>
+  <tr><td class="k">Internet</td><td><span class="no">About 13 KB/s today.</span> The launcher's 2.6 MB took three minutes. Java plus the server jar is about 230 MB: hours at that rate. The Minecraft client download is larger still.</td></tr>
+  <tr><td class="k">Minecraft launcher</td><td>Installed from Mojang's own download, signed by Microsoft and notarized. It relaunched itself and is still fetching its core. The plan does not depend on it.</td></tr>
+  <tr><td class="k">Icarus</td><td>The <code>fogsift-icarus-0.0.1</code> folder in Downloads holds only README, LICENSE and CHANGELOG. The working scripts are <code>~/Code/_experiments/SimpleAgentOS</code>; the vault is <code>~/Documents/Personal-Remote-Vault</code>.</td></tr>
+  <tr><td class="k">Seed</td><td>Community picks are version-specific. Example for 1.21.4: <span class="mono">7040093665601660210</span>, two plains villages at spawn. Choosing the server version pins the seed; it will be verified in the generated world before anything is committed to it.</td></tr>
+  <tr><td class="k">Repo</td><td><span class="ok">Exists:</span> <a href="https://github.com/ctavolazzi/gameplay_iterator_benchmark">ctavolazzi/gameplay_iterator_benchmark</a>, public, MIT, created 2026-10-02 with a one-line README. This page is its first document.</td></tr>
+</table>
+
+<h2>Questions for CT</h2>
+<ol class="questions">
+  <li><strong>Architecture.</strong> Confirm the headless bot on a local server, with the installed Minecraft as the spectator window.</li>
+  <li><strong>"Better".</strong> Confirm that improvement means the skill library and memory evolve, and the model weights do not.</li>
+  <li><strong>Downloads.</strong> OK to start Java 21 and the server jar in the background at today's speed, or is there a faster window?</li>
+</ol>
+
+<h2>First build step, once the questions are answered</h2>
+<p>Server running from the seed, a bot that joins it and logs its first hundred ticks, and the database receiving them. Nothing clever until that spine is in and a run can be replayed from the database.</p>
+
+<h2>Sources</h2>
+<ul class="src">
+  <li><a href="https://cdn.jsdelivr.net/npm/mineflayer@4.37.1/package.json">mineflayer 4.37.1 package manifest</a></li>
+  <li><a href="https://github.com/yoava7/mindcraft">Mindcraft on GitHub</a></li>
+  <li><a href="https://huggingface.co/Sweaterdog/MindCraft-LLM-tuning/raw/22e2fa40892a07b0c86c8ebe6e7a69a9fed592bc/README.md">Mindcraft fine-tuned models (Andy-4)</a></li>
+  <li><a href="https://arxiv.org/pdf/2305.16291">Voyager: An Open-Ended Embodied Agent with Large Language Models</a></li>
+  <li><a href="https://xgamingserver.com/blog/?p=22937">Village spawn seeds for 1.21.x</a></li>
+</ul>
+
+<div class="foot">gameplay_iterator_benchmark, docs/plan.html, v0.0.2, written 2026-10-02. A proposal. Every claim about this machine was measured on it that day; every claim about the plan is a plan.</div>
+</main>
+</body>
+</html>

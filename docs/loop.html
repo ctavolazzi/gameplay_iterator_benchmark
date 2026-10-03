@@ -1,0 +1,466 @@
+<!doctype html>
+<!-- gameplay_iterator_benchmark / docs/loop.html v0.1.0, 2026-10-02. Every number on this page was measured on CT's Mac that day. The animation replays runs 4 and 9 from data/benchmark.sqlite, move for move. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Loop, Working</title>
+<meta name="description" content="A 0.5 GB model on this Mac played a test game and died. Claude read the run and wrote it better tools. The same model then finished the game in the fewest moves. This page replays both real runs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#f5f0e6;--cream-dark:#ede6d8;--paper:#faf8f3;--chocolate:#4a2c2a;--choc-mid:#6b4423;
+  --burnt-orange:#e07b3c;--rust:#c2410c;--teal:#0d9488;--gold:#d97706;--line:#d4c4a8;
+  --muted:#7a6b5d;--ink:#3a312b;--sage:#3a7a5c;--pine:#1a5c4e;--max:880px;
+  --shadow-hard:4px 4px 0 var(--chocolate);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:Outfit,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.65}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+main{max-width:var(--max);margin:0 auto;padding:0 16px 96px}
+header.hero{border-bottom:3px solid var(--chocolate);background:linear-gradient(180deg,var(--cream) 0%,var(--cream-dark) 100%)}
+.hero-inner{max-width:var(--max);margin:0 auto;padding:44px 16px 32px}
+.kicker{display:inline-block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--paper);background:var(--chocolate);padding:4px 10px}
+h1{font-size:clamp(30px,6vw,50px);line-height:1.06;margin:16px 0 12px;font-weight:900;letter-spacing:-.02em;color:var(--chocolate);text-wrap:balance}
+.lede{font-size:19px;max-width:700px;margin:0 0 18px}
+.status{display:flex;flex-wrap:wrap;gap:8px;font-size:13px}
+.badge{border:2px solid var(--chocolate);background:var(--paper);padding:2px 10px;font-weight:700}
+.badge.warn{background:#fde9d9;border-color:var(--rust);color:var(--rust)}
+h2{font-size:26px;margin:52px 0 12px;font-weight:800;color:var(--chocolate);border-bottom:3px solid var(--burnt-orange);display:inline-block;padding-bottom:2px}
+p{margin:0 0 14px;max-width:720px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 12px}
+.chip{border:2px solid var(--line);background:var(--paper);color:var(--muted);padding:3px 10px;font-weight:700;font-size:13px;transition:background .15s,color .15s,border-color .15s}
+.chip.on{background:var(--burnt-orange);border-color:var(--chocolate);color:var(--paper);box-shadow:3px 3px 0 var(--chocolate)}
+.chip.arrow{border:0;background:none;padding:3px 0;color:var(--line)}
+.stage{display:grid;grid-template-columns:minmax(0,432px) minmax(220px,1fr);gap:20px;align-items:start}
+.world{position:relative;border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);background:#5f9e3b;line-height:0}
+.world canvas{display:block;width:100%;height:auto;image-rendering:pixelated}
+.banner{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.25;padding:16px;color:#fff;font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+.banner.on{display:flex}
+.banner b{font-size:clamp(22px,5vw,32px);font-weight:700;text-shadow:3px 3px 0 rgba(0,0,0,.55);letter-spacing:.02em}
+.banner span{font-size:14px;margin-top:8px;text-shadow:2px 2px 0 rgba(0,0,0,.6);max-width:300px}
+.banner.intro{background:rgba(20,14,10,.62)}
+.banner.dead{background:linear-gradient(180deg,rgba(120,0,0,.55),rgba(60,0,0,.78))}
+.banner.win{background:linear-gradient(180deg,rgba(20,80,40,.45),rgba(10,50,30,.75))}
+.banner.win b{color:#ffe27a}
+.coach{position:absolute;inset:0;display:none;background:var(--paper);color:var(--ink);line-height:1.45;padding:14px 16px;overflow:hidden;font-size:14px}
+.coach.on{display:block}
+.coach h3{margin:0 0 8px;font-size:16px;color:var(--chocolate);font-weight:800}
+.coach .row{opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s;margin:0 0 8px}
+.coach .row.on{opacity:1;transform:none}
+.coach .score{display:inline-block;background:var(--rust);color:#fff;font-weight:800;padding:1px 9px}
+.coach .skills{display:flex;flex-wrap:wrap;gap:5px}
+.coach .skills code{background:var(--chocolate);color:var(--cream);padding:1px 7px}
+.coach ol{margin:4px 0 0;padding-left:20px}
+.coach .ok{color:var(--sage);font-weight:800}
+.hud{background:var(--paper);border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);padding:14px 16px;font-size:14.5px}
+.hud .line{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)}
+.hud .label{color:var(--muted);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+.hud b{color:var(--chocolate)}
+.heart{display:inline-block;width:14px;height:14px;margin-left:3px;background:#c81e1e;clip-path:polygon(50% 100%,0 45%,0 15%,15% 0,35% 0,50% 15%,65% 0,85% 0,100% 15%,100% 45%)}
+.heart.off{background:var(--line)}
+.inv span{display:inline-block;border:2px solid var(--chocolate);padding:0 7px;margin-left:4px;font-weight:700;font-size:13px;background:var(--cream)}
+.opts{list-style:none;margin:6px 0 8px;padding:0;min-height:158px}
+.opts li{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:13px;padding:2px 8px;margin:3px 0;border:2px solid var(--line);background:var(--cream);color:var(--muted)}
+.opts li.chosen{border-color:var(--chocolate);background:var(--burnt-orange);color:var(--paper);font-weight:700}
+.thinking{color:var(--muted);font-style:italic}
+.controls{display:flex;gap:8px;margin:14px 0 6px}
+button{font:inherit;font-weight:700;border:3px solid var(--chocolate);background:var(--paper);color:var(--chocolate);padding:5px 14px;cursor:pointer;box-shadow:3px 3px 0 var(--chocolate)}
+button:hover{background:var(--burnt-orange);color:var(--paper)}
+button:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+.caption{font-size:13.5px;color:var(--muted);margin:8px 0 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin:16px 0}
+.card{background:var(--paper);border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);padding:14px 16px}
+.card .who{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--burnt-orange)}
+.card h3{margin:2px 0 6px;font-size:18px;color:var(--chocolate)}
+.card p{margin:0;font-size:14.5px}
+.tablewrap{overflow-x:auto;margin:14px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--paper);border:3px solid var(--chocolate);font-size:14.5px;min-width:560px}
+th,td{padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+th{background:var(--cream-dark);font-weight:700;color:var(--chocolate);border-bottom:2px solid var(--chocolate)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums}
+.pass{color:var(--sage);font-weight:800}.fail{color:var(--rust);font-weight:800}
+ul.plain{padding-left:20px;max-width:720px}
+ul.plain li{margin-bottom:8px}
+ul.check{list-style:none;padding:0;max-width:720px}
+ul.check li{padding:7px 0 7px 30px;border-bottom:1px solid var(--line);position:relative}
+ul.check li::before{position:absolute;left:0;top:7px;font-weight:900}
+ul.check li.done::before{content:"\2713";color:var(--sage)}
+ul.check li.todo::before{content:"\25A1";color:var(--rust)}
+ul.check li.you::before{content:"\2192";color:var(--burnt-orange)}
+.foot{margin-top:64px;padding-top:16px;border-top:3px solid var(--chocolate);font-size:13px;color:var(--muted)}
+@media (max-width:720px){.stage{grid-template-columns:1fr}.opts{min-height:0}}
+@media (prefers-reduced-motion:reduce){.coach .row{transition:none}.chip{transition:none}}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-inner">
+    <span class="kicker">Measured 2026-10-02</span>
+    <h1>A small model played. Claude coached. It got better.</h1>
+    <p class="lede">A 0.5 GB model running on this Mac played a small test game and died with nothing. Its run went to Claude, which wrote it better tools. The same model, in the same world, then finished the game in the fewest moves possible. Below is a replay of those two real runs.</p>
+    <div class="status">
+      <span class="badge warn">Test game, not Minecraft yet</span>
+      <span class="badge">Model: Qwen3.5-0.8B, 0.53 GB</span>
+      <span class="badge">48 decisions, 48 valid</span>
+      <span class="badge">31 of 31 tests pass</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<h2>Watch the two runs</h2>
+<div class="chips" aria-hidden="true">
+  <span class="chip" data-chip="decide">Model decides</span><span class="chip arrow">&gt;</span>
+  <span class="chip" data-chip="act">Code acts</span><span class="chip arrow">&gt;</span>
+  <span class="chip" data-chip="store">Saved</span><span class="chip arrow">&gt;</span>
+  <span class="chip" data-chip="coach">Claude coaches</span><span class="chip arrow">&gt;</span>
+  <span class="chip" data-chip="playbook">New playbook</span>
+</div>
+<div class="stage">
+  <div>
+    <div class="world">
+      <canvas id="world" width="432" height="432" role="img" aria-label="A nine by nine grid world with trees, stones and pits. In the first run the character walks north into a pit three times and dies. In the second run it gathers three wood and one stone, crafts a table and then a pick."></canvas>
+      <div class="banner intro" id="b-intro"><b id="b-intro-title"></b><span id="b-intro-sub"></span></div>
+      <div class="banner dead" id="b-dead"><b>You died</b><span>8 decisions. Walked into the same pit three times. Nothing gathered.</span></div>
+      <div class="banner win" id="b-win"><b>Pick crafted</b><span>6 decisions, the fewest possible. No damage taken.</span></div>
+      <div class="coach" id="coach">
+        <h3>The run goes to Claude</h3>
+        <p class="row" data-at="0.04">Run 4 is over. Every decision, what the model saw and what happened, is read from the database.</p>
+        <p class="row" data-at="0.18"><span class="score">Score: 1 of 10</span></p>
+        <p class="row" data-at="0.26">"Trees were adjacent from the first decision, but the empty briefing gave it no goal and the single-step skills made it do its own navigation, which it cannot do."</p>
+        <div class="row" data-at="0.46">Claude writes new skills as code:
+          <div class="skills"><code>get_wood</code><code>get_stone</code><code>craft</code><code>explore</code></div>
+        </div>
+        <div class="row" data-at="0.6">And a briefing:
+          <ol><li>If craft:pick is offered, choose it.</li><li>If craft:table is offered, choose it.</li><li>Under 3 wood? get_wood.</li><li>No stone? get_stone.</li><li>Otherwise explore.</li></ol>
+        </div>
+        <p class="row" data-at="0.82"><span class="ok">VALID</span> on three test worlds. Saved as playbook v003.</p>
+      </div>
+    </div>
+    <div class="controls">
+      <button type="button" id="play">Pause</button>
+      <button type="button" id="restart">Restart</button>
+    </div>
+  </div>
+  <div class="hud" aria-hidden="true">
+    <div class="line"><span class="label">Run</span><b id="h-run"></b></div>
+    <div class="line"><span class="label">Playbook</span><b id="h-pb"></b></div>
+    <div class="line"><span class="label">Health</span><span id="h-hp"></span></div>
+    <div class="line"><span class="label">Carrying</span><span class="inv" id="h-inv"></span></div>
+    <div class="line"><span class="label">Decision</span><span><b id="h-dec"></b> <span id="h-ms"></span></span></div>
+    <div class="label" style="margin-top:10px">The model's options</div>
+    <ul class="opts" id="h-opts"></ul>
+    <div class="line" style="border-bottom:0"><span class="label">Decisions saved</span><b id="h-rows">0</b></div>
+  </div>
+</div>
+<p class="caption">A replay of runs 4 and 9 from the database, move for move, on the world made from seed <code>sim-1</code>. The thinking pauses are shortened; the real time of each decision is shown beside it.</p>
+
+<h2>What we built</h2>
+<div class="cards">
+  <div class="card"><div class="who">The player</div><h3>Local model</h3><p>Runs on llama.cpp on this Mac. Each turn it reads the state and picks one option. A grammar forces its answer to be one of the options offered.</p></div>
+  <div class="card"><div class="who">The hands</div><h3>Skills</h3><p>Code that does the moving: walk to a tree around the pits, gather, craft. The model chooses a skill; the skill acts.</p></div>
+  <div class="card"><div class="who">The record</div><h3>Database</h3><p>Every decision is saved: what the model saw, its options, its choice, what happened, and how long it took.</p></div>
+  <div class="card"><div class="who">The coach</div><h3>Claude</h3><p>When a run ends, Claude reads it, scores it, and may rewrite the briefing and the skills. A new playbook is used only after it passes a test.</p></div>
+</div>
+<p>The model's weights never change. What changes between runs is the playbook: the advice it reads and the skills it can choose from. Each version is kept, so any run can be matched to the playbook it played with.</p>
+
+<h2>The evidence</h2>
+<div class="tablewrap">
+<table>
+  <tr><th>Run</th><th>Model</th><th>Playbook</th><th>Ended</th><th>Decisions</th><th>Options each</th><th>Median decision</th></tr>
+  <tr><td class="num">4</td><td>Qwen3.5-0.8B</td><td>v001, no advice</td><td class="fail">Died</td><td class="num">8</td><td class="num">4</td><td class="num">4.6 s</td></tr>
+  <tr><td class="num">6</td><td>Andy-4.2-Micro</td><td>v001, no advice</td><td class="fail">Died</td><td class="num">8</td><td class="num">4</td><td class="num">5.4 s</td></tr>
+  <tr><td class="num">5</td><td>Qwen3.5-0.8B</td><td>v002, by Claude</td><td class="pass">Finished</td><td class="num">6</td><td class="num">1</td><td class="num">5.6 s</td></tr>
+  <tr><td class="num">7</td><td>Andy-4.2-Micro</td><td>v002, by Claude</td><td class="pass">Finished</td><td class="num">6</td><td class="num">1</td><td class="num">6.2 s</td></tr>
+  <tr><td class="num">9</td><td>Qwen3.5-0.8B</td><td>v003, by Claude</td><td class="pass">Finished</td><td class="num">6</td><td class="num">6</td><td class="num">7.9 s</td></tr>
+  <tr><td class="num">10</td><td>Andy-4.2-Micro</td><td>v003, by Claude</td><td class="pass">Finished</td><td class="num">8</td><td class="num">6</td><td class="num">6.7 s</td></tr>
+</table>
+</div>
+<p class="caption">All on one world, seed <code>sim-1</code>, with a budget of 40 decisions. "Options each" is the median number of options the model had per decision.</p>
+
+<h2>Against the marks set before running</h2>
+<div class="tablewrap">
+<table>
+  <tr><th>Mark</th><th>Result</th><th>What was measured</th></tr>
+  <tr><td>Every decision is one of the options offered</td><td class="pass">Pass</td><td>48 of 48 decisions across 7 runs.</td></tr>
+  <tr><td>Median decision under 5 seconds</td><td class="fail">Fail</td><td>4.6 to 7.9 seconds. The model reads about 97 tokens a second and each prompt was 376 to 574 tokens.</td></tr>
+  <tr><td>Run stored with its timings and why it ended</td><td class="pass">Pass</td><td>Every run, every decision.</td></tr>
+  <tr><td>Claude returns a playbook that passes the test</td><td class="pass">Pass</td><td>Twice, first try each time. About a minute and 12 to 16 cents per call.</td></tr>
+  <tr><td>Same model, same world, new playbook: gets further</td><td class="pass">Pass</td><td>From dying with nothing to finishing in 6 decisions.</td></tr>
+</table>
+</div>
+
+<h2>What this does not show</h2>
+<ul class="plain">
+  <li><strong>It is a toy game on one world.</strong> A nine by nine grid, not Minecraft.</li>
+  <li><strong>Most of the skill is Claude's code.</strong> The model's job was to follow a five-line list among about six options. Claude's first playbook, v002, offered one option at a time, so the model chose nothing. That was caught by measuring, and the coach now has a rule against it.</li>
+  <li><strong>The Minecraft-trained model was no better here.</strong> Andy took 8 decisions to Qwen's 6, twice gathering more wood when crafting the pick was on offer. This says nothing about Andy inside Minecraft, where its training should count.</li>
+  <li><strong>It is not real time yet.</strong> The model cannot reuse the unchanged part of a prompt on this llama.cpp build, so it re-reads everything each turn. By the measured speeds, a 200-token prompt and a shorter answer would come to about 2.5 seconds. That has not been tried.</li>
+</ul>
+
+<h2>Ready for Minecraft</h2>
+<ul class="check">
+  <li class="done">Java 25 runtime: fetched, checksum verified, runs on this Mac.</li>
+  <li class="done">Minecraft 26.1 server: fetched, verified, boots as far as its EULA gate.</li>
+  <li class="done">World settings written: one seed, this machine only, no outside connections.</li>
+  <li class="done">Bot library installed (Mineflayer 4.39.0); it knows Minecraft 26.1.</li>
+  <li class="done">Two 0.5 GB models on disk, both verified.</li>
+  <li class="todo">Not built: the Minecraft adapter, where a bot joins the server, reports what it sees, and has skills to walk, mine and craft. That is the first job of testing.</li>
+  <li class="you">Needs CT: a yes to Mojang's EULA, which the server requires before it will start.</li>
+  <li class="you">Needs CT: a 26.1 installation added in the launcher to watch. The game on this Mac is 26.3, and a game can only join a server of its own version.</li>
+</ul>
+
+<div class="foot">gameplay_iterator_benchmark, docs/loop.html, v0.1.0, 2026-10-02. The Andy models are by the Mindcraft CE team: this work uses data and models created by @Sweaterdog, and the Mindcraft Project.</div>
+</main>
+
+<script>
+(() => {
+  // The world made from seed sim-1, and the two runs, exported from data/benchmark.sqlite.
+  // A move is [the game's action, x after, y after, what it caused].
+  const MAP = ['TT..P.P..', '...T.P...', '..SS.PTST', '..S.....T', '..TT.....', '.......TS', '...S.....', '.S...T.T.', '.TSTTT.T.'];
+  const START = { x: 4, y: 4 };
+  const STEPS = ['step:north', 'step:south', 'step:east', 'step:west'];
+  const EDGE = ['step:south', 'step:east', 'step:west'];
+  const EXPLORE = ['explore:north', 'explore:south', 'explore:east', 'explore:west'];
+  const RUNS = [
+    { id: 4, playbook: 'v001', ended: 'death', intro: 'Playbook v001. No advice, one step at a time.', decisions: [
+      { chose: 'step:north', options: STEPS, ms: 3466, moves: [['north', 4, 3]] },
+      { chose: 'step:north', options: STEPS, ms: 3876, moves: [['north', 4, 2]] },
+      { chose: 'step:north', options: STEPS, ms: 4369, moves: [['north', 4, 1]] },
+      { chose: 'step:north', options: STEPS, ms: 5254, moves: [['north', 4, 0, 'hurt']] },
+      { chose: 'step:south', options: EDGE, ms: 4486, moves: [['south', 4, 1]] },
+      { chose: 'step:north', options: STEPS, ms: 6186, moves: [['north', 4, 0, 'hurt']] },
+      { chose: 'step:south', options: EDGE, ms: 4626, moves: [['south', 4, 1]] },
+      { chose: 'step:north', options: STEPS, ms: 5063, moves: [['north', 4, 0, 'hurt']] },
+    ] },
+    { id: 9, playbook: 'v003', ended: 'complete', intro: 'Playbook v003, written by Claude. Same model, same world.', decisions: [
+      { chose: 'get_wood:tree', options: ['get_wood:tree', 'get_stone:stone', ...EXPLORE], ms: 8138, moves: [['west', 3, 4], ['gather', 3, 4, 'wood']] },
+      { chose: 'get_wood:tree', options: ['get_wood:tree', 'get_stone:stone', ...EXPLORE], ms: 7482, moves: [['west', 2, 4], ['gather', 2, 4, 'wood']] },
+      { chose: 'craft:table', options: ['get_stone:stone', 'craft:table', ...EXPLORE], ms: 7013, moves: [['craft_table', 2, 4, 'table']] },
+      { chose: 'get_stone:stone', options: ['get_stone:stone', ...EXPLORE], ms: 6949, moves: [['north', 2, 3], ['gather', 2, 3, 'stone']] },
+      { chose: 'get_wood:tree', options: ['get_wood:tree', ...EXPLORE], ms: 7921, moves: [['north', 2, 2], ['north', 2, 1], ['east', 3, 1], ['gather', 3, 1, 'wood']] },
+      { chose: 'craft:pick', options: ['get_wood:tree', 'craft:pick', ...EXPLORE], ms: 8217, moves: [['craft_pick', 3, 1, 'pick']] },
+    ] },
+  ];
+  const FLOAT = { hurt: '-1 heart', wood: '+1 wood', stone: '+1 stone', table: 'table made', pick: 'pick made' };
+
+  // The timeline: a list of segments, each changing the state. The state at any time is
+  // worked out from the start, so one frame never depends on the frame before it.
+  const SEG = [];
+  let clock = 0;
+  const add = (seconds, apply) => { SEG.push({ t0: clock, t1: clock + seconds, apply }); clock += seconds; };
+
+  function fresh(s, run) {
+    s.run = run; s.map = MAP.map((row) => row.split(''));
+    s.x = s.px = START.x; s.y = s.py = START.y;
+    s.hp = 3; s.inv = { wood: 0, stone: 0, table: 0, pick: 0 };
+    s.decision = -1; s.options = []; s.chosen = null; s.ms = null; s.thinking = false;
+    s.dead = 0; s.win = 0; s.coach = null; s.float = null; s.hurt = 0; s.intro = false;
+  }
+
+  function effect(s, name, what, x, y) {
+    if (what === 'hurt') s.hp -= 1;
+    if (name === 'gather') { s.inv[what] += 1; s.map[y][x] = '.'; }
+    if (name === 'craft_table') { s.inv.wood -= 2; s.inv.table = 1; }
+    if (name === 'craft_pick') { s.inv.wood -= 1; s.inv.stone -= 1; s.inv.pick = 1; }
+  }
+
+  for (const run of RUNS) {
+    add(2.0, (s, k, live) => { fresh(s, run); s.phase = 'intro'; s.intro = live; });
+    run.decisions.forEach((d, i) => {
+      add(1.0, (s, k, live) => {
+        s.phase = 'decide'; s.decision = i; s.options = d.options; s.ms = d.ms;
+        s.thinking = live && k <= 0.6; s.chosen = s.thinking ? null : d.chose; s.float = null;
+      });
+      for (const [name, x, y, what] of d.moves) {
+        add(0.45, (s, k, live) => {
+          s.phase = 'act';
+          const e = live ? k * k * (3 - 2 * k) : 1;
+          s.px = s.x + (x - s.x) * e; s.py = s.y + (y - s.y) * e;
+          if (!live) { s.x = x; s.y = y; }
+          if (!live || k >= 0.55) effect(s, name, what, x, y);
+          s.float = live && what && k >= 0.55 ? { text: FLOAT[what], k: (k - 0.55) / 0.45 } : null;
+          s.hurt = live && what === 'hurt' && k >= 0.55 ? 1 - (k - 0.55) / 0.45 : 0;
+        });
+      }
+      add(0.3, (s, k, live) => { s.rows += 1; s.float = null; if (live) s.phase = 'store'; });
+    });
+    if (run.ended === 'death') {
+      add(3.4, (s, k, live) => { s.phase = 'dead'; s.dead = live ? k : 1; });
+      add(12, (s, k, live) => { s.phase = 'coach'; s.coach = live ? k : null; });
+    } else {
+      add(5, (s, k, live) => { s.phase = 'win'; s.win = live ? k : 1; });
+    }
+  }
+  const TOTAL = clock;
+
+  function stateAt(t) {
+    const s = { rows: 0, phase: 'intro' };
+    fresh(s, RUNS[0]);
+    for (const seg of SEG) {
+      if (t < seg.t0) break;
+      const live = t < seg.t1;
+      seg.apply(s, live ? (t - seg.t0) / (seg.t1 - seg.t0) : 1, live);
+    }
+    return s;
+  }
+
+  // Drawing. One tile is 16 art pixels of 3 screen pixels each.
+  const TILE = 48, A = 3;
+  const canvas = document.getElementById('world');
+  const ctx = canvas.getContext('2d');
+  const noise = (x, y, i) => {
+    let h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(i, 83492791);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+
+  function drawTile(c, kind, tx, ty) {
+    const ox = tx * TILE, oy = ty * TILE;
+    const dot = (ax, ay, colour) => { c.fillStyle = colour; c.fillRect(ox + ax * A, oy + ay * A, A, A); };
+    const corner = (ax, ay, lo, hi) => (ax === lo || ax === hi) && (ay === lo || ay === hi);
+    for (let ay = 0; ay < 16; ay++) for (let ax = 0; ax < 16; ax++) {
+      const r = noise(tx * 16 + ax, ty * 16 + ay, 1);
+      dot(ax, ay, r < 0.14 ? '#4e8a31' : r > 0.86 ? '#74b548' : '#5f9e3b');
+    }
+    if (kind === 'T') {
+      for (let ay = 2; ay < 14; ay++) for (let ax = 2; ax < 14; ax++) {
+        if (corner(ax, ay, 2, 13)) continue;
+        const r = noise(tx * 16 + ax, ty * 16 + ay, 2);
+        dot(ax, ay, r < 0.25 ? '#245c22' : r > 0.8 ? '#3f8a35' : '#2f7029');
+      }
+      for (let ay = 6; ay < 10; ay++) for (let ax = 6; ax < 10; ax++) dot(ax, ay, (ax + ay) % 2 ? '#6b4a2b' : '#7d5732');
+    }
+    if (kind === 'S') {
+      for (let ay = 3; ay < 13; ay++) for (let ax = 3; ax < 13; ax++) {
+        if (corner(ax, ay, 3, 12)) continue;
+        const r = noise(tx * 16 + ax, ty * 16 + ay, 3);
+        dot(ax, ay, r < 0.2 ? '#6e6e6e' : r > 0.8 ? '#a6a6a6' : '#8b8b8b');
+      }
+    }
+    if (kind === 'P') {
+      for (let ay = 2; ay < 14; ay++) for (let ax = 2; ax < 14; ax++) {
+        const rim = ax === 2 || ax === 13 || ay === 2 || ay === 13;
+        dot(ax, ay, rim ? '#5a3d24' : noise(tx * 16 + ax, ty * 16 + ay, 4) < 0.2 ? '#241a13' : '#120d0a');
+      }
+    }
+    c.fillStyle = 'rgba(0,0,0,.10)';
+    c.fillRect(ox + TILE - 1, oy, 1, TILE);
+    c.fillRect(ox, oy + TILE - 1, TILE, 1);
+  }
+
+  // The map only changes when something is gathered, so each version is painted once.
+  const painted = new Map();
+  function mapImage(map) {
+    const key = map.map((row) => row.join('')).join('');
+    if (!painted.has(key)) {
+      const off = document.createElement('canvas');
+      off.width = canvas.width; off.height = canvas.height;
+      const c = off.getContext('2d');
+      map.forEach((row, y) => row.forEach((kind, x) => drawTile(c, kind, x, y)));
+      painted.set(key, off);
+    }
+    return painted.get(key);
+  }
+
+  const SPRITE = ['..HHHHHH..', '.HHHHHHHH.', '.HHHHHHHH.', '.SSSSSSSS.', '.SWBSSBWS.', '.SSSSSSSS.', '.SSSMMSSS.', 'SCCCCCCCCS', 'SCCCCCCCCS', '.CCCCCCCC.'];
+  const INK = { H: '#3b2416', S: '#c98f6b', W: '#ffffff', B: '#3a4fa0', M: '#7a4a35', C: '#1aa3a3' };
+
+  function drawPlayer(s) {
+    const shrink = s.dead ? 1 - 0.55 * Math.min(1, s.dead * 3) : 1;
+    const size = A * shrink;
+    const ox = s.px * TILE + (TILE - 10 * size) / 2, oy = s.py * TILE + (TILE - 10 * size) / 2;
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fillRect(ox + size, oy + 9.2 * size, 8 * size, 1.4 * size);
+    SPRITE.forEach((row, ay) => [...row].forEach((ch, ax) => {
+      if (ch === '.') return;
+      ctx.fillStyle = INK[ch];
+      ctx.fillRect(ox + ax * size, oy + ay * size, size + 0.5, size + 0.5);
+    }));
+    const red = Math.max(s.hurt * 0.75, s.dead ? 0.6 : 0);
+    if (red > 0) { ctx.fillStyle = `rgba(210,20,20,${red})`; ctx.fillRect(ox, oy, 10 * size, 10 * size); }
+  }
+
+  function draw(s) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(mapImage(s.map), 0, 0);
+    drawPlayer(s);
+    if (s.float) {
+      ctx.font = 'bold 15px "JetBrains Mono", ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      const x = Math.min(canvas.width - 60, Math.max(60, s.px * TILE + TILE / 2));
+      const y = Math.max(18, s.py * TILE - 4 - s.float.k * 16);
+      ctx.globalAlpha = 1 - s.float.k * 0.6;
+      ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillText(s.float.text, x + 2, y + 2);
+      ctx.fillStyle = '#fff'; ctx.fillText(s.float.text, x, y);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // The panel beside the world, rewritten only when what it shows has changed.
+  const $ = (id) => document.getElementById(id);
+  const chips = [...document.querySelectorAll('[data-chip]')];
+  const coachRows = [...document.querySelectorAll('#coach .row')];
+  let shown = '';
+  function panel(s) {
+    const chip = { decide: 'decide', act: 'act', store: 'store' }[s.phase]
+      ?? (s.phase === 'coach' ? (s.coach < 0.44 ? 'coach' : 'playbook') : '');
+    const key = [s.run.id, s.phase, s.hp, s.decision, s.chosen, s.thinking, s.rows, chip, JSON.stringify(s.inv), s.intro].join('|');
+    if (key !== shown) {
+      shown = key;
+      $('h-run').textContent = `${s.run.id}, Qwen3.5-0.8B`;
+      $('h-pb').textContent = s.run.playbook;
+      $('h-hp').innerHTML = [0, 1, 2].map((i) => `<span class="heart${i < s.hp ? '' : ' off'}"></span>`).join('');
+      const carried = Object.entries(s.inv).filter(([, n]) => n > 0).map(([item, n]) => `<span>${item}${n > 1 ? ' x' + n : ''}</span>`).join('');
+      $('h-inv').innerHTML = carried || 'nothing';
+      $('h-dec').textContent = s.decision < 0 ? '' : `${s.decision + 1} of ${s.run.decisions.length}`;
+      $('h-ms').innerHTML = s.decision < 0 ? '' : s.thinking ? '<span class="thinking">thinking</span>' : `in ${(s.ms / 1000).toFixed(1)} s`;
+      $('h-opts').innerHTML = s.options.map((o) => `<li${o === s.chosen ? ' class="chosen"' : ''}>${o}</li>`).join('');
+      $('h-rows').textContent = s.rows;
+      chips.forEach((el) => el.classList.toggle('on', el.dataset.chip === chip));
+      $('b-intro').classList.toggle('on', s.intro);
+      $('b-intro-title').textContent = `Run ${s.run.id}`;
+      $('b-intro-sub').textContent = s.run.intro;
+      $('b-dead').classList.toggle('on', s.phase === 'dead' && s.dead > 0.3);
+      $('b-win').classList.toggle('on', s.phase === 'win' && s.win > 0.12);
+      $('coach').classList.toggle('on', s.coach !== null);
+      document.body.dataset.phase = s.phase;
+      document.body.dataset.run = s.run.id;
+      document.body.dataset.rows = s.rows;
+    }
+    if (s.coach !== null) coachRows.forEach((el) => el.classList.toggle('on', s.coach >= Number(el.dataset.at)));
+  }
+
+  const frame = (t) => { const s = stateAt(t); draw(s); panel(s); };
+
+  // ?t=12.5 shows the page frozen at that second, which is how it is checked.
+  const fixed = new URLSearchParams(location.search).get('t');
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let t = fixed === null ? 0 : Math.max(0, Math.min(TOTAL - 0.01, Number(fixed) || 0));
+  let playing = fixed === null && !still;
+  let last = null;
+  const button = $('play');
+  const label = () => { button.textContent = playing ? 'Pause' : 'Play'; };
+  button.addEventListener('click', () => { playing = !playing; last = null; label(); });
+  $('restart').addEventListener('click', () => { t = 0; last = null; playing = true; label(); });
+  function tick(now) {
+    if (playing) {
+      if (last !== null) t += Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (t >= TOTAL) t = 0;
+    }
+    frame(t);
+    requestAnimationFrame(tick);
+  }
+  label();
+  frame(t);
+  document.body.dataset.total = TOTAL.toFixed(2);
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
