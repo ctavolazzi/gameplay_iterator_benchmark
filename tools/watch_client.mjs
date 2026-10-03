@@ -169,6 +169,13 @@ function launch() {
     if (asPlayer) options.push('guiScale:4', 'autoJump:true', 'renderDistance:6', 'fullscreen:false', 'narrator:0');
     writeFileSync(join(gameDir, 'options.txt'), `${options.join('\n')}\n`);
   }
+  // The player's window is sent back into each new world through its Direct Connection
+  // screen, which offers the last address used. Make sure that is this server.
+  if (asPlayer) {
+    const file = join(gameDir, 'options.txt');
+    const kept = readFileSync(file, 'utf8').split('\n').filter((line) => line && !line.startsWith('lastServer:'));
+    writeFileSync(file, `${[...kept, 'lastServer:localhost:25565'].join('\n')}\n`);
+  }
   const fill = {
     natives_directory: natives, launcher_name: 'gameplay_iterator_benchmark', launcher_version: '1',
     classpath: [...libs.map((lib) => lib.file), JAR].join(':'), classpath_separator: ':',

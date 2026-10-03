@@ -4,23 +4,33 @@
 // doing it. What to press is decided in hands_plan.mjs and hands_adapter.mjs.
 
 import { execFile, execFileSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { BOT_NAME } from './common.mjs';
-import { clickPlan, parseInventory, screenLayout, turn } from './hands_plan.mjs';
+import { bmpHeight, bmpPixel, clickPlan, isPanelGrey, parseInventory, screenLayout, turn } from './hands_plan.mjs';
 
 const run = promisify(execFile);
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Key codes of a US keyboard.
-export const KEY = { w: 13, a: 0, s: 1, d: 2, e: 14, space: 49, escape: 53, shift: 56, control: 59 };
+export const KEY = { w: 13, a: 0, s: 1, d: 2, e: 14, space: 49, escape: 53, shift: 56, control: 59, enter: 36 };
 const HOTBAR_KEYS = [18, 19, 20, 21, 23, 22, 26, 28, 25];
 const TITLE_BAR = 28;
 const GUI_SCALE = 4;   // written into the player window's options.txt by tools/watch_client.mjs
 
+// The process of the player's game window, or null. Its command line is about 9,700
+// characters and pgrep does not search that far (measured: it found nothing while the
+// window was open), so the whole process list is read.
 export function playerWindowPid() {
   try {
-    return execFileSync('pgrep', ['-f', `username ${BOT_NAME}`], { encoding: 'utf8' }).trim().split('\n')[0] || null;
+    const all = execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    for (const line of all.split('\n')) {
+      const [pid, program] = line.trim().split(/\s+/, 2);
+      if (program?.endsWith('/java') && line.includes(` --username ${BOT_NAME} `)) return pid;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -39,18 +49,50 @@ export function windowContent(pid) {
   return { x, y: y + TITLE_BAR, width, height: height - TITLE_BAR };
 }
 
+// A window left open by the last run sits on "Connection Lost". Three presses bring it into
+// the new world: Back to Server List, Direct Connection (its address field holds the last
+// address used, which tools/watch_client.mjs sets), and Enter. Where the two buttons are was
+// read off pictures of those screens on 2026-10-03: the first 28.5 interface pixels below
+// the middle, the second 42.5 above the bottom edge. Says whether the player got in.
+async function rejoin(bin, pid, online) {
+  const content = windowContent(pid);
+  if (!content) return false;
+  const unit = GUI_SCALE / 2;
+  const x = content.x + content.width / 2;
+  const send = (...args) => run(bin, [pid, ...args.map(String)]);
+  try {
+    await send('click', 'left', x, content.y + content.height / 2 + 28.5 * unit);
+    await pause(1200);
+    await send('click', 'left', x, content.y + content.height - 42.5 * unit);
+    await pause(1000);
+    await send('tap', KEY.enter);
+  } catch {
+    return false;
+  }
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    if (online()) return true;
+    await pause(300);
+  }
+  return false;
+}
+
 // server: the running game server. ask(command, pattern): send a console command and wait
 // for the log line that answers it. online(): is the player in the world right now.
 export async function openHands({ root, server, ask, online }) {
   const bin = join(root, 'runtime', 'bin', 'hands');
 
-  // The window. One that is open but not in this world is closed and opened again; having
-  // it rejoin by itself is not built yet.
+  // The window. One left open by the last run is sent back in. If that does not work it is
+  // closed, and a new one is opened as when there was none.
   let pid = playerWindowPid();
+  let rejoined = false;
   if (pid && !online()) {
-    try { process.kill(Number(pid), 'SIGTERM'); } catch { /* already gone */ }
-    await pause(2500);
-    pid = null;
+    rejoined = await rejoin(bin, pid, online);
+    if (!rejoined) {
+      try { process.kill(Number(pid), 'SIGTERM'); } catch { /* already gone */ }
+      await pause(2500);
+      pid = null;
+    }
   }
   let fresh = false;
   if (!pid) {
@@ -64,7 +106,7 @@ export async function openHands({ root, server, ask, online }) {
     if (Date.now() > deadline) throw new Error('the game window did not join the server within 150 seconds');
     await pause(500);
   }
-  await pause(fresh ? 9000 : 2500);   // let the land load and draw
+  await pause(fresh ? 9000 : 4000);   // let the land load and draw
   const content = windowContent(pid);
   if (!content) throw new Error('the game window is not on screen');
   const layout = screenLayout(content, GUI_SCALE);
@@ -112,18 +154,48 @@ export async function openHands({ root, server, ask, online }) {
     }
   }
 
+  // Is the inventory or the crafting table showing? Read from the picture on the screen,
+  // because nothing else can say: a key press that opened nothing looks the same from here
+  // as one that did. Gives null when the screen cannot be read (no permission to see it).
+  const probeFile = join(tmpdir(), `gib-probe-${process.pid}.bmp`);
+  async function panelShowing() {
+    try {
+      const p = layout.probe;
+      await run('screencapture', ['-x', '-t', 'bmp', '-R', `${p.x},${p.y},${p.width},${p.height}`, probeFile]);
+      const picture = await readFile(probeFile);
+      return isPanelGrey(bmpPixel(picture, 1, 1)) && isPanelGrey(bmpPixel(picture, 1, bmpHeight(picture) - 2));
+    } catch {
+      return null;
+    }
+  }
+
   // Screens. Only one can be open; Escape with none open would bring up the game menu. The
   // note of what is open changes before the key is pressed, so two callers at the same
   // moment (the health watcher and the end of thinking) cannot both press Escape.
   let screen = null;
   async function openInventory() {
-    if (screen) return;
+    if (screen) return true;
     screen = 'inventory';
     await tap(KEY.e);
     await pause(450);
+    if ((await panelShowing()) !== false) return true;
+    await tap(KEY.e);                        // the first press did not take: once more
+    await pause(450);
+    if ((await panelShowing()) !== false) return true;
+    screen = null;
+    return false;
   }
   async function closeScreen() {
     if (!screen) return;
+    screen = null;
+    if ((await panelShowing()) === false) return;   // nothing is open: Escape would open the game menu
+    await tap(KEY.escape);
+    await pause(300);
+  }
+  // Close whatever screen is showing, noted or not. A right click meant for the ground can
+  // land on a crafting table and open it.
+  async function settle() {
+    if ((await panelShowing()) !== true) return;
     screen = null;
     await tap(KEY.escape);
     await pause(300);
@@ -152,6 +224,8 @@ export async function openHands({ root, server, ask, online }) {
 
   return {
     pid,
+    // How the window came to be in this world: 'opened', 'rejoined', or 'already'.
+    arrived: fresh ? 'opened' : rejoined ? 'rejoined' : 'already',
     layout,
     look,
     face,
@@ -165,6 +239,8 @@ export async function openHands({ root, server, ask, online }) {
     carried,
     openInventory,
     closeScreen,
+    settle,
+    panelShowing,
     screen: () => screen,
     craftOnScreen,
     click,

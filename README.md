@@ -194,6 +194,21 @@ reach of the ground and dig it), `craft:<item>`, `place:crafting_table` and
 | 22 | Qwen3.5-0.8B | v004, written by hand | 25 | 11 milestones: stone pickaxe at decision 7, then iron, coal and a furnace by decision 13. No damage. |
 | 24 | Qwen3.5-0.8B | v004 | 16 | 11 milestones, furnace at decision 14, 3 damage. |
 | 25 | Andy-4.2-Micro | v004 | 16 | 11 milestones, furnace at decision 12, no damage. |
+| 26 | Qwen3.5-0.8B | v004 | 16 | Played with a game window watching, and filmed. 10 milestones, no furnace. |
+| 27 | Qwen3.5-0.8B | v005s, first form | 16 | 11 milestones by decision 8. Could not place its table among leaves, and after the goal walked north until a skeleton killed it: the first death. |
+| 28 | Qwen3.5-0.8B | v005o, first form | 16 | 11 milestones by decision 9, tick 4838. No failure, no damage. |
+| 29 | Qwen3.5-0.8B | v005s | 16 | 11 milestones by decision 6, tick 3288. No failure, no damage. |
+| 30 | Qwen3.5-0.8B | v005s | 10 | 11 milestones by decision 6, tick 3300. No failure, no damage. |
+| 31 | Qwen3.5-0.8B | v005o | 16 | 11 milestones by decision 7, tick 4116. No failure, no damage. |
+| 32 | Qwen3.5-0.8B | v005o | 16 | 11 milestones by decision 8, tick 3830. No failure, no damage. |
+
+v005s and v005o were written the same hour by two Claude subagents (a Sonnet 5.5 and an
+Opus 5.5) from the same brief, each without reading the other, each with three live runs.
+v004 took 12 to 14 decisions and about 6000 to 6700 ticks to reach all 11 milestones; v005s
+takes 6 and about 3300, v005o 7 to 8 and about 3800 to 4100. The cost of that speed is that
+the model is offered a single option at 13 to 15 of its 16 decisions.
+[notes/runs/2026-10-03-two-coaches.md](notes/runs/2026-10-03-two-coaches.md) has the table,
+read from the database, and what it does and does not show.
 
 What that shows: with raw actions or a long briefing, these 0.5 GB models repeat one
 command for a whole run. v003 and v004 work because each skill is a whole job and the menu

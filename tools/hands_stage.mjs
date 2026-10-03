@@ -8,6 +8,7 @@
 //   log           collect whichever kind of log is nearest
 //   think:N       what the player does while a model thinks, held for N seconds
 //   wait:N        do nothing for N seconds
+//   give:ITEM:N   hand the player N of an item (N is 1 if left out), to start a test part way
 // After every step this prints the result, what is carried and what could be done next, and
 // saves a picture of the game window to DIR (data/stage/ by default, which git ignores).
 // Nothing is stored in the database: this is for finding out what works, not a run.
@@ -65,13 +66,19 @@ let failures = 0;
 try {
   say('starting the server and the game window');
   await adapter.reset({ seed: defaults.seed, options: {} });
-  say(`in the world. ${shot('start')}`);
+  say(`in the world; the game window was ${adapter.window()}. ${shot('start')}`);
   for (const step of steps) {
     if (adapter.ended()) { say(`the game ended: ${adapter.ended()}`); break; }
     const [kind, arg] = step.split(':');
     if (kind === 'wait') {
       await pause(Number(arg) * 1000);
       say(`waited ${arg} s. ${shot(step)}`);
+      continue;
+    }
+    if (kind === 'give') {
+      adapter.debugCommand(`give LocalModel ${arg} ${step.split(':')[2] ?? 1}`);
+      await pause(600);
+      say(`gave ${step.split(':')[2] ?? 1} ${arg}: now carrying ${JSON.stringify((await adapter.observe()).carrying)}`);
       continue;
     }
     if (kind === 'think') {

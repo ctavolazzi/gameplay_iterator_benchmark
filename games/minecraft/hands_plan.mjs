@@ -74,7 +74,31 @@ export function screenLayout(content, guiScale = 4) {
     result(table) {
       return table ? at(124 + 8, 35 + 8) : at(154 + 8, 28 + 8);
     },
+    // A thin strip of screen down the panel's left side, just inside its border. When the
+    // inventory or the crafting table is showing, both ends of it are the panel's plain grey.
+    probe: { x: at(4, 4).x, y: at(4, 4).y, width: 2, height: 156 * unit + 2 },
   };
+}
+
+// One pixel of an uncompressed BMP picture, as { r, g, b }. x and y count from the top left.
+export function bmpPixel(buffer, x, y) {
+  const start = buffer.readUInt32LE(10);
+  const width = buffer.readInt32LE(18);
+  const tall = buffer.readInt32LE(22);          // above zero: the rows are stored bottom first
+  const bytes = buffer.readUInt16LE(28) / 8;
+  const row = Math.ceil((width * bytes) / 4) * 4;
+  const line = tall > 0 ? tall - 1 - y : y;
+  const at = start + line * row + x * bytes;
+  return { r: buffer[at + 2], g: buffer[at + 1], b: buffer[at] };
+}
+
+export const bmpHeight = (buffer) => Math.abs(buffer.readInt32LE(22));
+
+// The inventory and the crafting table are drawn on a light grey panel. Read off real
+// pictures of both on 2026-10-03, its plain grey is exactly 198, 198, 198; the forest behind
+// was 25, 49, 12 with no screen open.
+export function isPanelGrey({ r, g, b }) {
+  return [r, g, b].every((v) => Math.abs(v - 198) <= 6);
 }
 
 // The clicks that make a recipe once, as a person would do them: pick a stack up, put one

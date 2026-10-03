@@ -4,8 +4,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RECIPES } from '../games/minecraft/common.mjs';
-import { aim, canMake, clickPlan, counts, parseInventory, screenLayout, step, turn } from '../games/minecraft/hands_plan.mjs';
+import { RECIPES, dropOf, heightAboveGround } from '../games/minecraft/common.mjs';
+import { aim, bmpHeight, bmpPixel, canMake, clickPlan, counts, isPanelGrey, parseInventory, screenLayout, step, turn } from '../games/minecraft/hands_plan.mjs';
 
 const near = (a, b, tolerance = 0.01) => assert.ok(Math.abs(a - b) <= tolerance, `${a} is not within ${tolerance} of ${b}`);
 
@@ -96,4 +96,69 @@ test('planks of two kinds can be used together', () => {
   const plan = clickPlan(RECIPES.crafting_table, mixed);
   assert.equal(plan.filter((c) => c.on === 'grid').length, 4);
   assert.deepEqual(plan.filter((c) => c.on === 'slot').map((c) => c.index), [0, 1]);
+});
+
+// A picture as the screen recorder writes it: 24 bits a pixel, rows stored bottom first,
+// each row padded to a multiple of 4 bytes.
+function bmp(rows) {
+  const width = rows[0].length;
+  const row = Math.ceil((width * 3) / 4) * 4;
+  const buffer = Buffer.alloc(54 + row * rows.length);
+  buffer.write('BM');
+  buffer.writeUInt32LE(54, 10);
+  buffer.writeInt32LE(width, 18);
+  buffer.writeInt32LE(rows.length, 22);
+  buffer.writeUInt16LE(24, 28);
+  rows.forEach((pixels, y) => pixels.forEach(([r, g, b], x) => {
+    const at = 54 + (rows.length - 1 - y) * row + x * 3;
+    buffer[at] = b; buffer[at + 1] = g; buffer[at + 2] = r;
+  }));
+  return buffer;
+}
+
+test('a pixel is read from the right place in a picture', () => {
+  const picture = bmp([
+    [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+    [[10, 11, 12], [13, 14, 15], [16, 17, 18]],
+  ]);
+  assert.equal(bmpHeight(picture), 2);
+  assert.deepEqual(bmpPixel(picture, 0, 0), { r: 1, g: 2, b: 3 }, 'top left');
+  assert.deepEqual(bmpPixel(picture, 2, 0), { r: 7, g: 8, b: 9 }, 'top right');
+  assert.deepEqual(bmpPixel(picture, 0, 1), { r: 10, g: 11, b: 12 }, 'bottom left: a flipped picture would give the top row');
+  assert.deepEqual(bmpPixel(picture, 2, 1), { r: 16, g: 17, b: 18 });
+});
+
+test('the inventory panel is told from the world behind it by its grey', () => {
+  // Read off real pictures of the game on 2026-10-03, at the two ends of the strip below.
+  assert.equal(isPanelGrey({ r: 198, g: 198, b: 198 }), true, 'inventory open, and crafting table open');
+  assert.equal(isPanelGrey({ r: 25, g: 49, b: 12 }), false, 'forest, nothing open');
+  assert.equal(isPanelGrey({ r: 63, g: 63, b: 63 }), false, 'a dark grey that is not the panel');
+  assert.equal(isPanelGrey({ r: 176, g: 204, b: 255 }), false, 'sky');
+  // The strip sits where those pictures were measured: pixel 624, 224 to 624, 848 of a
+  // 1920 by 1080 picture is point 312, 112 to 312, 424.
+  const { probe } = screenLayout({ x: 0, y: 0, width: 960, height: 540 }, 4);
+  assert.deepEqual(probe, { x: 312, y: 112, width: 2, height: 314 });
+  assert.ok(probe.y + probe.height - 1 >= 424 && probe.y + probe.height - 1 <= 426);
+});
+
+test('a trunk is told from a branch by how far the log stands above the ground', () => {
+  // A small world, as columns of names from y 0 up. x 0: a trunk, 5 logs on dirt. x 1: a
+  // branch log with leaves and air under it, 6 above the grass. x 2: the world not loaded.
+  const columns = {
+    0: ['stone', 'dirt', 'oak_log', 'oak_log', 'oak_log', 'oak_log', 'oak_log', 'oak_leaves'],
+    1: ['stone', 'grass_block', 'air', 'air', 'air', 'air', 'oak_leaves', 'oak_leaves', 'oak_log'],
+  };
+  const blockAt = (x, y, z) => (z === 0 && columns[x] ? columns[x][y] ?? 'air' : null);
+  assert.equal(heightAboveGround(blockAt, { x: 0, y: 2, z: 0 }), 0, 'the foot of the trunk');
+  assert.equal(heightAboveGround(blockAt, { x: 0, y: 5, z: 0 }), 3, 'the fourth log up, still in reach from the ground');
+  assert.equal(heightAboveGround(blockAt, { x: 0, y: 6, z: 0 }), 4, 'the fifth is out of reach');
+  assert.equal(heightAboveGround(blockAt, { x: 1, y: 8, z: 0 }), 6, 'a branch counts from the forest floor, not from the leaves under it');
+  assert.equal(heightAboveGround(blockAt, { x: 2, y: 5, z: 0 }), Infinity, 'nothing is known where the world is not loaded');
+});
+
+test('a dig is finished by what the block leaves behind', () => {
+  assert.equal(dropOf('stone'), 'cobblestone');
+  assert.equal(dropOf('iron_ore'), 'raw_iron');
+  assert.equal(dropOf('coal_ore'), 'coal');
+  assert.equal(dropOf('oak_log'), 'oak_log');
 });

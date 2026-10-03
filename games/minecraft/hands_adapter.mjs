@@ -12,7 +12,7 @@ import pathfinderPackage from 'mineflayer-pathfinder';
 import vec3Package from 'vec3';
 import {
   BOT_NAME, COLLECTIBLE, CRAFTABLE, DIRECTIONS, NEEDS_PICKAXE, NEEDS_STONE_PICKAXE, NOTICED_SINGLY, RECIPES, TOOL_TIERS,
-  describeText, gainEvents, runMetrics, vocabularyList,
+  TRUNK_REACH, describeText, dropOf, gainEvents, heightAboveGround, runMetrics, vocabularyList,
 } from './common.mjs';
 import { KEY, openHands } from './hands.mjs';
 import { aim, canMake, counts, step, turn } from './hands_plan.mjs';
@@ -107,13 +107,21 @@ export function createHandsAdapter({ root }) {
     return Object.fromEntries(Object.entries(best).sort((a, b) => a[1] - b[1]).slice(0, 8));
   }
 
+  const nameAt = (x, y, z) => eyes.blockAt(new Vec3(x, y, z))?.name ?? null;
+
   function reachable(name) {
     const from = feet();
     const level = Math.floor(from.y);
+    const found = eyes.findBlocks({ point: from, matching: (block) => block.name === name, maxDistance: 48, count: 128 });
+    const nearestOf = (list) => list.sort((a, b) => a.distanceTo(from) - b.distanceTo(from))[0] ?? null;
+    if (name.endsWith('_log')) {
+      // The foot of a trunk, as a person would take it, and not a branch up in the leaves:
+      // going after those walks the player up into the canopy, where little else works.
+      const trunk = nearestOf(found.filter((at) => heightAboveGround(nameAt, at) <= TRUNK_REACH));
+      if (trunk) return trunk;
+    }
     const lowest = NEEDS_PICKAXE.test(name) ? level - 20 : level - 6;
-    return eyes.findBlocks({ point: from, matching: (block) => block.name === name, maxDistance: 48, count: 64 })
-      .filter((at) => at.y <= level + 2 && at.y >= lowest)
-      .sort((a, b) => a.distanceTo(from) - b.distanceTo(from))[0] ?? null;
+    return nearestOf(found.filter((at) => at.y <= level + 2 && at.y >= lowest));
   }
 
   // Put the best tool for a block in hand, if one is carried in the hotbar.
@@ -130,6 +138,14 @@ export function createHandsAdapter({ root }) {
     if (selected !== place) { await hands.hotbar(place); selected = place; }
   }
 
+  // The first block along the crosshair from where the player stands, within its reach.
+  function sight(from, yaw, pitch) {
+    const y = (yaw * Math.PI) / 180;
+    const p = (pitch * Math.PI) / 180;
+    const direction = new Vec3(-Math.sin(y) * Math.cos(p), -Math.sin(p), Math.cos(y) * Math.cos(p));
+    return eyes.world.raycast(from.offset(0, EYE_HEIGHT, 0), direction, REACH + 0.2);
+  }
+
   // Break one block with the left button held, the way a player does. If something else is
   // in the way of the crosshair, that is what gets broken first.
   async function breakBlock(at, limit = 14000) {
@@ -140,10 +156,7 @@ export function createHandsAdapter({ root }) {
       const from = feet();
       const { yaw, pitch } = aim(from, at.offset(0.5, 0.5, 0.5));
       await hands.look(yaw, pitch, 220);
-      const y = (yaw * Math.PI) / 180;
-      const p = (pitch * Math.PI) / 180;
-      const direction = new Vec3(-Math.sin(y) * Math.cos(p), -Math.sin(p), Math.cos(y) * Math.cos(p));
-      const hit = await eyes.world.raycast(from.offset(0, EYE_HEIGHT, 0), direction, REACH + 0.2);
+      const hit = sight(from, yaw, pitch);
       if (!hit) return false;                       // nothing in reach along that line
       const victim = hit.position;
       const name = eyes.blockAt(victim).name;
@@ -230,6 +243,23 @@ export function createHandsAdapter({ root }) {
     return goal.isEnd(feet().floored()) ? { ok: true } : { ok: false, why };
   }
 
+  // A few steps straight at a point close by, with no plan: turn to it and hold W.
+  async function stepToward(point, limit) {
+    const deadline = Date.now() + limit;
+    try {
+      while (Date.now() < deadline && !dead) {
+        const p = feet();
+        if (Math.hypot(point.x - p.x, point.z - p.z) < 0.5) break;
+        const want = aim(p, new Vec3(point.x, p.y + EYE_HEIGHT, point.z)).yaw;
+        if (Math.abs(turn(hands.direction().yaw, want)) > 20) await hands.look(want, 20, 160);
+        await hands.hold(KEY.w);
+        await pause(60);
+      }
+    } finally {
+      await hands.release(KEY.w);
+    }
+  }
+
   const gains = (before, after) =>
     Object.fromEntries(Object.keys(after).filter((k) => after[k] > (before[k] ?? 0)).map((k) => [k, after[k] - (before[k] ?? 0)]));
 
@@ -237,20 +267,40 @@ export function createHandsAdapter({ root }) {
     const target = reachable(name);
     if (!target) return { ok: false, error: `no ${name} within reach of the ground nearby` };
     const before = counts(await hands.carried());
+    // Done when what the block leaves behind is carried. One of the same kind dug out of
+    // the way while walking counts; dirt picked up on the way does not.
+    const wanted = dropOf(name);
+    const have = async () => {
+      const got = gains(before, counts(await hands.carried()));
+      return got[wanted] ? got : null;
+    };
     const walk = await walkTo(new goals.GoalLookAtBlock(target, eyes.world, { reach: REACH - 0.5 }), 45000);
-    if (!walk.ok) return { ok: false, error: `could not get to the ${name}: ${walk.why}` };
-    if (!(await breakBlock(target))) return { ok: false, error: `could not break the ${name}` };
+    if (!walk.ok) {
+      const got = await have();
+      return got ? { ok: true, got } : { ok: false, error: `could not get to the ${name}: ${walk.why}` };
+    }
+    if (!(await breakBlock(target))) {
+      const got = await have();
+      return got ? { ok: true, got } : { ok: false, error: `could not break the ${name}` };
+    }
+    // The drop lies where the block was. Walk onto it, as a player does: by a planned path
+    // where there is one, and straight at it where there is not.
+    let seen = 'no drop in sight';
     for (let tries = 0; tries < 6; tries++) {
       await pause(450);
-      const got = gains(before, counts(await hands.carried()));
-      if (Object.keys(got).length) return { ok: true, got };
+      const got = await have();
+      if (got) return { ok: true, got };
       const from = feet();
       const drop = Object.values(eyes.entities)
         .filter((e) => e.name === 'item' && e.position.distanceTo(from) < 8)
         .sort((a, b) => a.position.distanceTo(from) - b.position.distanceTo(from))[0];
-      if (drop) await walkTo(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1), 7000);
+      if (!drop) continue;
+      seen = `a drop lies ${drop.position.distanceTo(from).toFixed(1)} blocks off`;
+      const spot = drop.position.floored();
+      const walk = await walkTo(new goals.GoalBlock(spot.x, spot.y, spot.z), 6000);
+      if (!walk.ok) await stepToward(drop.position, 1500);
     }
-    return { ok: false, error: `dug the ${name} but picked nothing up` };
+    return { ok: false, error: `dug the ${name} but did not pick up its ${wanted} (${seen})` };
   }
 
   async function craft(want) {
@@ -264,15 +314,22 @@ export function createHandsAdapter({ root }) {
         const walk = await walkTo(new goals.GoalNear(table.position.x, table.position.y, table.position.z, 2), 75000);
         if (!walk.ok) return { ok: false, error: `could not get to the crafting table: ${walk.why}` };
       }
-      const { yaw, pitch } = aim(feet(), table.position.offset(0.5, 0.5, 0.5));
-      await hands.look(yaw, pitch, 260);
-      await hands.press('right');
-      await pause(90);
-      await hands.unpress();
-      await pause(650);
+      // Right click the table, and see that its screen came up before clicking a recipe:
+      // clicks meant for a screen that is not there would be swings and stray turns.
+      let opened = false;
+      for (let tries = 0; tries < 2 && !opened; tries++) {
+        const { yaw, pitch } = aim(feet(), table.position.offset(0.5, 0.5, 0.5));
+        await hands.look(yaw, pitch, 260);
+        await hands.press('right');
+        await pause(90);
+        await hands.unpress();
+        await pause(650);
+        opened = (await hands.panelShowing()) !== false;
+      }
+      if (!opened) return { ok: false, error: 'could not open the crafting table' };
       hands.setScreen('table');
-    } else {
-      await hands.openInventory();
+    } else if (!(await hands.openInventory())) {
+      return { ok: false, error: 'could not open the inventory' };
     }
     const clicked = await hands.craftOnScreen(recipe, recipe.table);
     await hands.closeScreen();
@@ -290,23 +347,34 @@ export function createHandsAdapter({ root }) {
     if (place > 8) { place = 7; await hands.toHotbar(table.slot, place); }
     await hands.hotbar(place);
     selected = place;
+    // The table is down when it is no longer carried, wherever it landed: a leaf or a
+    // flower in the way of the crosshair takes it a block off the spot that was meant.
+    const down = async () => !(await hands.carried()).some((s) => s.item === 'crafting_table');
     const base = feet().floored();
-    let tried = 0;
+    const spots = [];
     for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 1], [1, 2], [-2, 1], [-1, 2], [2, -1], [1, -2], [-2, -1], [-1, -2], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
       for (const dy of [-1, 0, -2]) {
         const ground = eyes.blockAt(base.offset(dx, dy, dz));
         const above = eyes.blockAt(base.offset(dx, dy + 1, dz));
         const open = above && above.boundingBox === 'empty' && !/water|lava/.test(above.name);
-        if (ground?.boundingBox !== 'block' || !open || tried >= 5) continue;
-        tried += 1;
-        const { yaw, pitch } = aim(feet(), ground.position.offset(0.5, 1, 0.5));
-        await hands.look(yaw, pitch, 240);
-        await hands.press('right');
-        await pause(90);
-        await hands.unpress();
-        await pause(550);
-        if (eyes.blockAt(above.position)?.name === 'crafting_table') return { ok: true, placed: 'crafting_table' };
+        if (ground?.boundingBox !== 'block' || !open) continue;
+        const from = feet();
+        const { yaw, pitch } = aim(from, ground.position.offset(0.5, 1, 0.5));
+        const hit = sight(from, yaw, pitch);
+        spots.push({ yaw, pitch, clear: Boolean(hit && hit.position.equals(ground.position)) });
       }
+    }
+    // Spots the crosshair reaches with nothing in the way come first.
+    spots.sort((a, b) => Number(b.clear) - Number(a.clear));
+    let tried = 0;
+    for (const spot of spots.slice(0, 5)) {
+      tried += 1;
+      await hands.look(spot.yaw, spot.pitch, 240);
+      await hands.press('right');
+      await pause(90);
+      await hands.unpress();
+      await pause(550);
+      if (await down()) return { ok: true, placed: 'crafting_table' };
     }
     return { ok: false, error: `could not put the table down (${tried} spots tried)` };
   }
@@ -453,8 +521,8 @@ export function createHandsAdapter({ root }) {
       } catch (error) {
         result = { ok: false, error: String(error?.message ?? error).slice(0, 160) };
         await hands.releaseAll();
-        await hands.closeScreen().catch(() => {});
       }
+      await hands.settle().catch(() => {});
       const events = pending.splice(0);
       const after = counts(await hands.carried());
       events.push(...gainEvents(before, after, reached, (milestone) => say(`milestone: ${milestone}`)));
@@ -472,6 +540,10 @@ export function createHandsAdapter({ root }) {
     },
 
     ended: () => (dead ? 'death' : server && !online ? 'disconnected' : null),
+    // How the game window came to be in this world: 'opened', 'rejoined' or 'already'.
+    window: () => hands?.arrived ?? null,
+    // A server command, for setting up a test (tools/hands_stage.mjs). No skill can reach it.
+    debugCommand: (text) => server?.command(text),
 
     metrics: ({ events }) => runMetrics(events, walked),
     describe: describeText,

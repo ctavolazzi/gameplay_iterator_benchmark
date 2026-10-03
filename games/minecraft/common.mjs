@@ -21,6 +21,26 @@ export const MILESTONES = [
   [/^coal$/, 'coal'], [/^furnace$/, 'furnace'], [/^raw_iron$/, 'iron'],
 ];
 
+// What a block leaves behind when it is dug. A dig is done when this is carried, not when
+// anything at all was picked up: dirt dug on the way is not the ore that was asked for.
+const DROPS = { stone: 'cobblestone', coal_ore: 'coal', iron_ore: 'raw_iron', copper_ore: 'raw_copper', deepslate: 'cobbled_deepslate' };
+export const dropOf = (block) => DROPS[block] ?? block;
+
+// How many blocks a log stands above the ground under it: 0 for the foot of a trunk. Air,
+// leaves and other logs are not ground, so a branch out in the canopy counts from the
+// forest floor. blockAt(x, y, z) gives a block's name, or null where the world is not loaded.
+// A person fells a tree from the ground, taking the logs they can reach: 0 to 3.
+export function heightAboveGround(blockAt, at, limit = 24) {
+  for (let down = 1; down <= limit; down++) {
+    const name = blockAt(at.x, at.y - down, at.z);
+    if (!name) return Infinity;
+    if (name === 'air' || name === 'cave_air' || name.endsWith('_leaves') || name.endsWith('_log') || name === 'vine') continue;
+    return down - 1;
+  }
+  return Infinity;
+}
+export const TRUNK_REACH = 3;
+
 // Recipes as a person lays them out in the crafting grid, top row first. '#log' is any
 // log, '#planks' any planks. The hidden bot asks the game for recipes; the real window has
 // to click them into place, so it needs the shapes.

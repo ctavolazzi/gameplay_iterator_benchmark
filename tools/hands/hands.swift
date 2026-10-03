@@ -8,6 +8,9 @@
 //   hands <pid> move <x> <y>                move the pointer (screen points, from top left)
 //   hands <pid> mouse down|up left|right <x> <y>
 //   hands <pid> click left|right <x> <y> [shift]
+//   hands 0 check                           may this program press keys, and see the screen?
+//
+// Build it with tools/hands/build.sh.
 //
 // Every command first makes sure the app is in front, and refuses to send anything if it
 // cannot be, so a key press never lands in some other window.
@@ -24,6 +27,15 @@ func fail(_ message: String) -> Never {
 
 let args = CommandLine.arguments
 guard args.count >= 3, let pid = Int32(args[1]) else { fail("usage: hands <pid> <command> ...") }
+
+// The Mac asks for two permissions, given to the program that started this one (a terminal,
+// an editor): Accessibility to press keys, Screen Recording to read the screen. Without the
+// first, key presses are dropped and nothing says so; this says so.
+if args[2] == "check" {
+  print("keys \(AXIsProcessTrusted() ? "yes" : "no")")
+  print("screen \(CGPreflightScreenCaptureAccess() ? "yes" : "no")")
+  exit(0)
+}
 guard let app = NSRunningApplication(processIdentifier: pid) else { fail("no app with pid \(pid)") }
 
 func bringToFront() {
