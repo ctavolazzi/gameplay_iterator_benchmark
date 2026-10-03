@@ -241,6 +241,47 @@ test('a run that crashes is stored as an error, never as a finished run', async 
   assert.equal(store.getSteps(1).length, 2);
 });
 
+// A game that shows on a screen is told when the player starts and stops thinking.
+function watched(seen, idle) {
+  const base = createAdapter();
+  return { ...base, idle, async act(action) { seen.push('act'); return base.act(action); } };
+}
+const watchedPlayer = (seen) => {
+  const inner = firstLegal();
+  return { id: 'scripted:watched', async decide(input) { seen.push('decide'); return inner.decide(input); } };
+};
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('a game is told when thinking starts and stops, and its show is not counted as thinking', async () => {
+  const store = freshStore();
+  const seen = [];
+  const adapter = watched(seen, async (phase) => { seen.push(phase); await wait(60); });
+  const out = await play(store, { adapter, player: watchedPlayer(seen), options: { map: GRASS }, budget: { ticks: 60, calls: 3 } });
+  assert.equal(out.steps, 3);
+  const round = ['start', 'decide', 'stop', 'act'];
+  assert.deepEqual(seen, [...round, ...round, ...round]);
+  // The show took 120 ms a decision. The player answered at once.
+  for (const step of store.getSteps(out.runId)) assert.ok(step.decideMs < 40, `decision ${step.seq} was timed at ${step.decideMs} ms`);
+});
+
+test('planted fault: a show that throws does not cost the run', async () => {
+  const store = freshStore();
+  const seen = [];
+  const adapter = watched(seen, async () => { throw new Error('the screen is gone'); });
+  const out = await play(store, { adapter, player: watchedPlayer(seen), options: { map: GRASS }, budget: { ticks: 60, calls: 3 } });
+  assert.equal(out.endedReason, 'budget_calls');
+  assert.equal(seen.filter((s) => s === 'act').length, 3);
+});
+
+test('planted fault: a player that crashes still ends the show', async () => {
+  const store = freshStore();
+  const seen = [];
+  const adapter = watched(seen, async (phase) => { seen.push(phase); });
+  const player = { id: 'scripted:crashes', async decide() { throw new Error('the model went away'); } };
+  await assert.rejects(play(store, { adapter, player, options: { map: GRASS } }), /the model went away/);
+  assert.deepEqual(seen, ['start', 'stop']);
+});
+
 test('an incomplete adapter is refused by name', () => {
   assert.throws(() => assertAdapter({ name: 'half', reset() {} }), /missing: version, observe\(\), actions\(\)/);
   assert.equal(assertAdapter(createAdapter()).name, 'testbed');

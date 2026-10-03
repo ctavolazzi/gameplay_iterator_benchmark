@@ -37,6 +37,13 @@ function median(values) {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
+// What a game does while the player thinks is for show. If it fails, the run goes on.
+async function idle(adapter, phase) {
+  try {
+    await adapter.idle?.(phase);
+  } catch { /* nothing rests on it */ }
+}
+
 // One run: reset the game from its seed, let the player act until the game ends or a
 // budget runs out, and store every step as it happens. budget is { ticks, calls }:
 // game ticks and player calls, whichever is reached first. How long each decision and
@@ -79,14 +86,25 @@ export async function runOnce({
 
       const observation = await adapter.observe();
       const legal = await adapter.actions();
+      // A game that shows on a screen may fill the wait with something to look at. It
+      // starts beside the thinking, never before it, and is over before the action begins.
+      const idling = idle(adapter, 'start');
       const startedDeciding = performance.now();
-      const decision = await player.decide({
-        observation,
-        actions: legal,
-        rules: adapter.describe(),
-        seq: log.steps.length,
-        previous: log.steps.slice(-3).map((s) => ({ action: s.action, result: s.result })),
-      });
+      let decision;
+      let decided;
+      try {
+        decision = await player.decide({
+          observation,
+          actions: legal,
+          rules: adapter.describe(),
+          seq: log.steps.length,
+          previous: log.steps.slice(-3).map((s) => ({ action: s.action, result: s.result })),
+        });
+      } finally {
+        decided = performance.now();
+        await idling;
+        await idle(adapter, 'stop');
+      }
       const startedActing = performance.now();
       calls += decision.calls ?? 1;
       const action = decision.action ?? { name: null };
@@ -96,7 +114,7 @@ export async function runOnce({
 
       const step = { seq: log.steps.length, tick, observation, action, result, events };
       trace = traceLink(trace, step);
-      const decideMs = Math.round(startedActing - startedDeciding);
+      const decideMs = Math.round(decided - startedDeciding);
       store.step(runId, {
         ...step,
         promptHash: decision.promptHash ?? null,

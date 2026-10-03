@@ -142,5 +142,6 @@ export function withSkills(adapter, playbook) {
     metrics: (log) => adapter.metrics(log),
     describe: () => adapter.describe(),
     close: () => adapter.close(),
+    idle: (phase) => adapter.idle?.(phase),
   };
 }

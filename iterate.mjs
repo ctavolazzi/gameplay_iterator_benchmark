@@ -2,7 +2,7 @@
 // The runner. It knows nothing about any game: config.json names one, and everything
 // about that game comes from games/<name>/adapter.mjs and playbooks/<name>/.
 //
-//   ./iterate.mjs run [--game G] [--seed S] [--ticks N] [--calls N] [--player random|first|llama] [--playbook vNNN|latest|none] [--wait N]
+//   ./iterate.mjs run [--game G] [--seed S] [--ticks N] [--calls N] [--player random|first|llama] [--playbook vNNN|latest|none] [--wait N] [--body B]
 //   ./iterate.mjs coach <run>             hand a finished run to Claude; it may write the next playbook
 //   ./iterate.mjs loop --runs N           run, coach, run again with the new playbook: N runs in all
 //   ./iterate.mjs replay <run>            play a stored run again and check every step
@@ -12,6 +12,8 @@
 //
 // --data DIR puts the database and logs somewhere other than data/. --model FILE picks the
 // local model for --player llama. replay, compare and validate exit 1 when the check fails.
+// --body B picks which of a game's bodies plays, for a game that has more than one
+// (Minecraft: bot, the hidden player, or hands, the real game window by keys and mouse).
 // Machine settings go in config.local.json (not in git): llamaServer, claude, coachModel.
 
 import { execFileSync } from 'node:child_process';
@@ -51,6 +53,7 @@ const { values, positionals } = parseArgs({
     game: { type: 'string' },
     wait: { type: 'string' },
     window: { type: 'boolean', default: false },
+    body: { type: 'string' },
     data: { type: 'string', default: join(ROOT, 'data') },
   },
 });
@@ -70,9 +73,10 @@ function wholeNumber(text, label) {
 async function openGame(name, wanted) {
   const game = await loadGame(name);
   const versionName = wanted === 'latest' ? latestVersion(ROOT, name) : wanted === 'none' ? null : wanted;
-  if (!versionName) return { game, adapter: game.createAdapter({ root: ROOT }), playbook: null, version: null, versionName: null };
+  const made = game.createAdapter({ root: ROOT, ...(values.body ? { body: values.body } : {}) });
+  if (!versionName) return { game, adapter: made, playbook: null, version: null, versionName: null };
   const playbook = loadPlaybook(playbookDir(ROOT, name, versionName));
-  return { game, adapter: withSkills(game.createAdapter({ root: ROOT }), playbook), playbook, version: `${name}/${versionName}`, versionName };
+  return { game, adapter: withSkills(made, playbook), playbook, version: `${name}/${versionName}`, versionName };
 }
 
 async function openLlama() {
@@ -124,6 +128,7 @@ async function playOne(store, llama) {
     // --wait N: a game that can be watched holds the start up to N seconds for a viewer.
     // --window: the game opens its own window to watch in, and waits for it to join.
     options: {
+      ...(values.body ? { body: values.body } : {}),
       ...(values.window ? { window: true } : {}),
       ...(values.wait || values.window ? { waitForViewer: wholeNumber(values.wait ?? '240', '--wait') } : {}),
     },

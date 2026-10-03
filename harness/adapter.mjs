@@ -13,6 +13,9 @@
 //   metrics(log)         numbers for a finished run, worked out from its { steps, events }
 //   describe()           the rules in words, for a player that reads
 //   close()              release whatever reset() started
+//   idle(phase)          optional. Called with 'start' when the player begins to think and
+//                        'stop' when it has chosen, for a game that shows on a screen and
+//                        wants something to happen there meanwhile. Nothing may rest on it.
 //
 // reset, observe, actions, act and close may be async. Event kinds, milestone names and
 // metric names are the game's own vocabulary; the harness stores them without reading them.

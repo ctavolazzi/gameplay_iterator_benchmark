@@ -273,6 +273,30 @@ test('the Minecraft adapter meets the contract before anything is started', { sk
   assert.deepEqual(Object.keys(first.skills), ['collect', 'craft', 'place', 'explore']);
 });
 
+test('Minecraft has two bodies behind the same actions, and an unknown body is refused by name', { skip: botLibrary ? false : 'the bot library is not installed; run npm install' }, async () => {
+  const minecraft = await import('../games/minecraft/adapter.mjs');
+  const bot = minecraft.createAdapter({ root: ROOT });
+  const hands = assertAdapter(minecraft.createAdapter({ root: ROOT, body: 'hands' }));
+  assert.equal(hands.name, bot.name);
+  assert.equal(hands.version, bot.version);
+  assert.deepEqual(await hands.actions(), [], 'with no game open there is nothing to choose');
+  // One playbook serves both, so both must name the same actions and tell the same rules.
+  assert.deepEqual(hands.vocabulary(), bot.vocabulary());
+  assert.equal(hands.describe(), bot.describe());
+  assert.equal(typeof hands.idle, 'function', 'the real window has something to show while the model thinks');
+  assert.equal(bot.idle, undefined);
+  assert.throws(() => minecraft.createAdapter({ root: ROOT, body: 'feet' }), /no body 'feet'; there are: bot, hands/);
+});
+
+test('skills in front of a game pass the thinking signal through to it', async () => {
+  const seen = [];
+  const game = withSkills({ ...createAdapter(), idle: async (phase) => { seen.push(phase); } }, firstPlaybook());
+  await game.idle('start');
+  await game.idle('stop');
+  assert.deepEqual(seen, ['start', 'stop']);
+  assert.equal(await withSkills(createAdapter(), firstPlaybook()).idle('start'), undefined, 'a game with nothing to show');
+});
+
 test('validate passes the first playbook and fails one whose skill crashes', () => {
   const cli = (...args) =>
     execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', join(ROOT, 'iterate.mjs'), ...args], { encoding: 'utf8' });

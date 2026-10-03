@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import mineflayer from 'mineflayer';
 import pathfinderPackage from 'mineflayer-pathfinder';
 import vec3Package from 'vec3';
+import { describeText, vocabularyList } from './common.mjs';
+import { createHandsAdapter } from './hands_adapter.mjs';
 import { MC_VERSION, startServer } from './server.mjs';
 
 const { pathfinder, Movements, goals } = pathfinderPackage;
@@ -42,7 +44,13 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const within = (promise, ms, what) =>
   Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${what} took more than ${ms / 1000} seconds`)), ms))]);
 
-export function createAdapter({ root } = {}) {
+// Two bodies take the same actions, so one playbook serves both. 'bot' is the hidden
+// player below. 'hands' is the real game window, played by keys and mouse (hands_adapter.mjs).
+export const BODIES = ['bot', 'hands'];
+
+export function createAdapter({ root, body = 'bot' } = {}) {
+  if (!BODIES.includes(body)) throw new Error(`no body '${body}'; there are: ${BODIES.join(', ')}`);
+  if (body === 'hands') return createHandsAdapter({ root });
   let server = null;
   let bot = null;
   let startAge = 0;
@@ -396,27 +404,9 @@ export function createAdapter({ root } = {}) {
       return { unique_items: items.size, milestones, distance_walked: Math.round(walked), damage_taken: Math.round(damage * 10) / 10, ...firstTicks };
     },
 
-    describe() {
-      return [
-        'You are a player in Minecraft survival, starting with nothing.',
-        'Get as far as you can: wood, then planks, a crafting table, sticks, a wooden pickaxe, then stone and a stone pickaxe.',
-        'collect digs one block and picks it up. craft makes an item from what you carry.',
-        'Tools need a crafting table placed on the ground nearby. Stone needs a pickaxe.',
-        'At night monsters come. If your health reaches 0 the run ends.',
-      ].join(' ');
-    },
-
-    // The kinds of action this game has. The exact names depend on what is nearby and what
-    // is carried; a skill reads them from api.primitives().
-    vocabulary() {
-      return [
-        { name: 'collect:<block>', about: 'walk to the nearest block of that kind and dig one, for example collect:oak_log or collect:stone. Offered only for blocks within 32 blocks; stone and ores only when a pickaxe is carried. Result: { ok, got: { item: count } }' },
-        { name: 'craft:<item>', about: `make one of: ${CRAFTABLE.join(', ')}. Offered only when what is carried is enough (and a crafting table is within 24 blocks for tools). craft:planks turns 1 log into 4 planks. Result: { ok, made }` },
-        { name: 'place:crafting_table', about: 'put a carried crafting table on the ground. Offered when one is carried and none is within 8 blocks. A craft that needs a table uses the nearest one within 32 blocks and walks to it, so far from the old table it is quicker to craft and place a new one.' },
-        { name: 'explore:<north|south|east|west>', about: 'walk about 24 blocks that way. Always offered.' },
-        { name: '(observation)', about: 'observe() gives { time: day or night, health 0 to 20, food, pos, carrying: { item: count }, nearest: { block: distance }, monsters: { name: distance } }' },
-      ];
-    },
+    // The rules in words and the kinds of action are the same for both bodies.
+    describe: describeText,
+    vocabulary: vocabularyList,
 
     async close() {
       if (server) say('The run is over.');
