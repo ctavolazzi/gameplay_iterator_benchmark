@@ -1,0 +1,167 @@
+<!doctype html>
+<!-- gameplay_iterator_benchmark / docs/report.html v0.1.0, 2026-10-03. Every number here was read from data/benchmark.sqlite or measured on CT's Mac on 2026-10-02 and 2026-10-03. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gameplay Iterator Benchmark: Report</title>
+<meta name="description" content="A small model on one laptop plays Minecraft by choosing commands; code acts; every decision is stored; the code it uses is improved between runs. What exists, how it works, what was learned, and what comes next.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#f5f0e6;--cream-dark:#ede6d8;--paper:#faf8f3;--chocolate:#4a2c2a;--choc-mid:#6b4423;
+  --burnt-orange:#e07b3c;--rust:#c2410c;--teal:#0d9488;--gold:#d97706;--line:#d4c4a8;
+  --muted:#7a6b5d;--ink:#3a312b;--sage:#3a7a5c;--pine:#1a5c4e;--max:900px;
+  --shadow-hard:4px 4px 0 var(--chocolate);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:Outfit,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.65}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+main{max-width:var(--max);margin:0 auto;padding:0 16px 96px}
+header.hero{border-bottom:3px solid var(--chocolate);background:linear-gradient(180deg,var(--cream) 0%,var(--cream-dark) 100%)}
+.hero-inner{max-width:var(--max);margin:0 auto;padding:44px 16px 32px}
+.kicker{display:inline-block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--paper);background:var(--chocolate);padding:4px 10px}
+h1{font-size:clamp(30px,6vw,50px);line-height:1.06;margin:16px 0 12px;font-weight:900;letter-spacing:-.02em;color:var(--chocolate);text-wrap:balance}
+.lede{font-size:19px;max-width:720px;margin:0 0 18px}
+.status{display:flex;flex-wrap:wrap;gap:8px;font-size:13px}
+.badge{border:2px solid var(--chocolate);background:var(--paper);padding:2px 10px;font-weight:700}
+h2{font-size:26px;margin:54px 0 12px;font-weight:800;color:var(--chocolate);border-bottom:3px solid var(--burnt-orange);display:inline-block;padding-bottom:2px}
+h3{font-size:18px;margin:0 0 6px;color:var(--chocolate);font-weight:800}
+p{margin:0 0 14px;max-width:740px}
+figure{margin:18px 0 22px}
+figure img{display:block;width:100%;height:auto;border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);background:#111}
+figcaption{font-size:13.5px;color:var(--muted);margin-top:10px;max-width:740px}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.pair figure{margin:8px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:16px 0}
+.card{background:var(--paper);border:3px solid var(--chocolate);box-shadow:var(--shadow-hard);padding:14px 16px}
+.card .who{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--burnt-orange)}
+.card p{margin:0;font-size:14.5px}
+.tablewrap{overflow-x:auto;margin:14px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--paper);border:3px solid var(--chocolate);font-size:14.5px;min-width:600px}
+th,td{padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+th{background:var(--cream-dark);font-weight:700;color:var(--chocolate);border-bottom:2px solid var(--chocolate)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums}
+td.ms{white-space:nowrap}
+.good{color:var(--sage);font-weight:800}.bad{color:var(--rust);font-weight:800}
+.bar{display:inline-block;height:12px;background:var(--burnt-orange);border:2px solid var(--chocolate);vertical-align:middle;margin-right:8px}
+ul.plain{padding-left:20px;max-width:740px}
+ul.plain li{margin-bottom:8px}
+ol.phases{list-style:none;counter-reset:phase;padding:0;max-width:780px}
+ol.phases li{counter-increment:phase;position:relative;background:var(--paper);border:3px solid var(--chocolate);padding:12px 16px 12px 62px;margin-bottom:12px}
+ol.phases li::before{content:counter(phase);position:absolute;left:14px;top:12px;width:32px;height:32px;line-height:32px;text-align:center;background:var(--chocolate);color:var(--paper);font-weight:800}
+ol.phases li.now{box-shadow:var(--shadow-hard);border-color:var(--rust)}
+ol.phases .when{font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--burnt-orange)}
+ol.phases p{margin:4px 0 0;font-size:15px}
+.note{border-left:6px solid var(--burnt-orange);background:var(--paper);padding:12px 16px;margin:18px 0;max-width:740px}
+.foot{margin-top:64px;padding-top:16px;border-top:3px solid var(--chocolate);font-size:13px;color:var(--muted)}
+a{color:var(--rust)}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-inner">
+    <span class="kicker">Report, 2026-10-03</span>
+    <h1>A small model plays Minecraft on one laptop, and gets better between runs</h1>
+    <p class="lede">A 0.5 GB language model, running on a 2015 MacBook, chooses what to do. Code does the walking, digging and crafting. Every decision is stored. Between runs, the code it uses is rewritten from what the stored runs show. In one night it went from collecting oak logs 25 times in a row to making a furnace.</p>
+    <div class="status">
+      <span class="badge">24 finished runs</span>
+      <span class="badge">261 model decisions stored</span>
+      <span class="badge">Same seed every run</span>
+      <span class="badge">No paid API calls in the loop</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<h2>What it looks like</h2>
+<figure>
+  <img src="img/run-26-through-the-bots-eyes.jpg" alt="First-person view in Minecraft looking up at an oak log among leaves. The chat reads: chose craft:stick, milestone: sticks, done stick 4." width="1280" height="720">
+  <figcaption>Run 26, filmed from the player's own eyes. The lines in the chat are the model's choice and what came of it: it chose to craft sticks, and got four. This run reached 10 milestones in 16 decisions.</figcaption>
+</figure>
+
+<h2>How it works</h2>
+<div class="cards">
+  <div class="card"><div class="who">The world</div><h3>One seed</h3><p>Each run deletes the world and makes it again from the same seed, so every run starts on the same land with nothing.</p></div>
+  <div class="card"><div class="who">The brain</div><h3>A local model</h3><p>Every few seconds it reads the state and picks one command from a short menu. It runs on the laptop through llama.cpp. Its weights never change.</p></div>
+  <div class="card"><div class="who">The hands</div><h3>Skills as code</h3><p>Each command is code that does a whole job: walk to a tree and take three logs, make a table and put it down.</p></div>
+  <div class="card"><div class="who">The record</div><h3>A database</h3><p>What the model saw, its options, its choice, the result, and how long each took. One SQLite file and a log per run.</p></div>
+  <div class="card"><div class="who">The coach</div><h3>Claude, in chat</h3><p>After a run, a Claude session reads the database and rewrites the briefing and the skills. That is the only part that learns.</p></div>
+</div>
+<p>The versions of the briefing and skills are kept as numbered playbooks, so any run can be matched to exactly what the model was given. The harness itself knows nothing about Minecraft: a game is one adapter, and a small grid game is used to test the harness.</p>
+
+<h2>The climb</h2>
+<div class="tablewrap">
+<table>
+  <tr><th>Run</th><th>Model</th><th>Playbook</th><th>Decisions</th><th>Milestones</th><th>What happened</th></tr>
+  <tr><td class="num">12</td><td>Andy-4.2-Micro</td><td>v001, raw actions</td><td class="num">25</td><td class="ms"><span class="bar" style="width:8px"></span>1</td><td>Chose "collect oak log" 25 times. 21 logs, nothing crafted.</td></tr>
+  <tr><td class="num">13</td><td>Andy-4.2-Micro</td><td>v002, automatic rewrite</td><td class="num">25</td><td class="bad">0</td><td>Chose "explore north" 25 times and walked 511 blocks away.</td></tr>
+  <tr><td class="num">18</td><td>Qwen3.5-0.8B</td><td>v003, by hand</td><td class="num">14</td><td class="ms"><span class="bar" style="width:64px"></span>8</td><td>Stone pickaxe in 7 decisions and 77 seconds of game time.</td></tr>
+  <tr><td class="num">22</td><td>Qwen3.5-0.8B</td><td>v004, by hand</td><td class="num">25</td><td class="ms"><span class="bar" style="width:88px"></span>11</td><td>Stone pickaxe, then iron, coal and a furnace by decision 13.</td></tr>
+  <tr><td class="num">25</td><td>Andy-4.2-Micro</td><td>v004</td><td class="num">16</td><td class="ms"><span class="bar" style="width:88px"></span>11</td><td>The same, with the other model. Furnace at decision 12.</td></tr>
+  <tr><td class="num">26</td><td>Qwen3.5-0.8B</td><td>v004</td><td class="num">16</td><td class="ms"><span class="bar" style="width:80px"></span>10</td><td>Played with a game window attached and recorded on video.</td></tr>
+</table>
+</div>
+<p>A milestone is a first: first log, planks, sticks, crafting table, table placed, wooden pickaxe, cobblestone, stone pickaxe, iron, coal, furnace. The model was the same size throughout. What changed was the playbook.</p>
+
+<h2>What was learned</h2>
+<ul class="plain">
+  <li><strong>A 0.5 GB model repeats itself.</strong> Given raw actions or a long list of advice, it picked one command and chose it for the whole run. It mostly takes the first option.</li>
+  <li><strong>Whole jobs and short menus fix that.</strong> When each command does a complete job and the menu holds only what is useful now, the same model reaches a furnace. Most decisions then have one or two options, so the skill is in the playbook more than in the model. Widening the model's choices again, a step at a time, is future work.</li>
+  <li><strong>Rewriting by hand in chat beat the automatic rewrite.</strong> The one automatic rewrite made things worse. A Claude session that reads the database, tests a change and takes its time did better, and costs nothing beyond the chat.</li>
+  <li><strong>A decision takes about 3.3 seconds</strong> on this laptop, or 4.5 with a game window open beside it. This model family re-reads the whole prompt each time on the llama.cpp build used.</li>
+  <li><strong>The Minecraft-trained model was not better than the plain one</strong> on this evidence. Both reached all 11 milestones with the same playbook.</li>
+  <li><strong>Wrong turns are part of the record.</strong> A server version nobody could join, a failure blamed on an outside cause that was a reused network connection, a bot that could not put its table down on grass. Each is written up in the notes with what fixed it.</li>
+</ul>
+
+<h2>The next step, already proven: the real game window</h2>
+<p>Until now the player has been a hidden bot, and the window only watched over its shoulder. A hidden bot has no screen, so nobody can see it open its inventory. The next body plays through the real game window by pressing keys and moving the mouse, so everything on screen is the game's own picture of a player playing.</p>
+<div class="pair">
+  <figure>
+    <img src="img/real-window-inventory.jpg" alt="The Minecraft inventory screen open in the real game: the character, the two by two crafting grid and empty inventory slots." width="1280" height="720">
+    <figcaption>The inventory, opened by a key press sent from outside the game.</figcaption>
+  </figure>
+  <figure>
+    <img src="img/real-window-swing.jpg" alt="First-person view of the player's arm raised mid-swing against tree leaves." width="1280" height="720">
+    <figcaption>The arm mid-swing, from a held mouse button sent the same way.</figcaption>
+  </figure>
+</div>
+<p>Tested on 2026-10-03: the inventory opens, the arm swings, and the camera turns to an exact direction on command. Walking was not proven in that test, because the player had spawned up in a tree.</p>
+
+<h2>What comes next</h2>
+<ol class="phases">
+  <li class="now"><span class="when">Now</span><h3>Play through the real window</h3><p>Walk planned paths with the W key, dig by holding the mouse, craft by clicking in the real inventory and crafting table. Open the inventory while the model thinks. Done when a stone pickaxe is reached this way and filmed.</p></li>
+  <li><span class="when">Next</span><h3>Reflexes: its own kind of mob</h3><p>A fast layer of plain code that reacts every moment, with no model call: lose health, so close the menu and face the cause; flee or fight; eat; take shelter at night. The model sets the aim, the reflexes keep it alive, and what emerges from the two together is the interesting part.</p></li>
+  <li><span class="when">Next</span><h3>The game's own achievements as goals</h3><p>Each run aims at one of Minecraft's advancements, which the server already announces in its log. Once it gets there, the run plays on freely, to gather what the next playbook needs. A house and a bed come first.</p></li>
+  <li><span class="when">Then</span><h3>A corpus of runs</h3><p>Decisions, model answers, skills called, errors, encounters won and lost, achievements and timings, for every run, with the playbook and code version beside them. Notes for each run go in the repository for whoever reads next.</p></li>
+  <li><span class="when">Then</span><h3>Coaches and brains compared</h3><p>The same runs improved by different coaches, such as two Claude models, to see whose playbooks go further. Then different local models as the brain, and menus widened to find where a small model's judgment holds.</p></li>
+  <li><span class="when">Later</span><h3>The long road</h3><p>Iron tools, shelter, farming, diamonds, the Nether, the End. And a second game, since the harness never knew the first one.</p></li>
+</ol>
+
+<h2>What someone could do with this</h2>
+<ul class="plain">
+  <li><strong>Measure small models on a long task for free.</strong> Everything in the loop runs on one old laptop. Swap the model file and the same seed tells you what changed.</li>
+  <li><strong>Ask where the skill lives.</strong> How much of "playing well" can be moved out of a model's weights and into tools and a briefing? Here that is a number: milestones per run, by playbook version, with the model held still.</li>
+  <li><strong>Study improvement itself.</strong> Each playbook has a parent and the run that led to it. That is a record of something getting better, step by step, with the mistakes left in.</li>
+  <li><strong>Compare coaches.</strong> A person, one Claude model, another: give each the same stored run and see whose next version does better.</li>
+  <li><strong>Build characters.</strong> The same two layers, fast reflexes plus a slow model that sets aims, are a design for game characters that react at once and still surprise you.</li>
+  <li><strong>Show it.</strong> A run is a video of a small model playing a game it was never trained on, with its choices on screen.</li>
+</ul>
+
+<div class="note">The honest limit today: the model chooses among a few options the playbook judged useful. It is not yet making hard decisions. The system is built to find out how far that can be pushed, and to keep the evidence either way.</div>
+
+<h2>Where things are</h2>
+<ul class="plain">
+  <li><a href="../README.md">README</a>: what is built, every result, and how to run it.</li>
+  <li><a href="loop.html">The loop, working</a>: a replay of two real runs of the test game.</li>
+  <li><a href="../notes/roadmap.md">notes/roadmap.md</a> and the rest of <a href="../notes/">notes/</a>: the plan, and what each session found.</li>
+  <li><a href="plan.html">The original proposal</a>, kept as it was written.</li>
+</ul>
+
+<div class="foot">gameplay_iterator_benchmark, docs/report.html, v0.1.0, 2026-10-03. Built by CT with Claude. The Andy models are by the Mindcraft CE team: this work uses data and models created by @Sweaterdog, and the Mindcraft Project.</div>
+</main>
+</body>
+</html>

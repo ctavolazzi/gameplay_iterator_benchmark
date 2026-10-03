@@ -6,7 +6,9 @@ is its playbook: the advice it reads and the skills, written as code, that it ch
 Claude writes the next playbook after reading each finished run. Minecraft is the first
 real game.
 
-- [docs/loop.html](docs/loop.html): what exists and the first results, with a replay of two real runs.
+- [docs/report.html](docs/report.html): the report. What exists, how it works, what was learned, what comes next.
+- [notes/](notes/README.md): the roadmap, the standing rules, and what each session found.
+- [docs/loop.html](docs/loop.html): the first results on the test game, with a replay of two real runs.
 - [docs/plan.html](docs/plan.html): the original proposal. Parts of it are out of date; this README is current.
 
 ## What is built (2026-10-02)

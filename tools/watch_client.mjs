@@ -155,20 +155,27 @@ function launch() {
   const libs = libraries(manifest);
   const absent = [JAVA, JAR, ...libs.map((lib) => lib.file)].filter((file) => !existsSync(file));
   if (absent.length) throw new Error(`not ready, ${absent.length} files missing (first: ${absent[0]}); run: tools/watch_client.mjs fetch`);
-  const gameDir = join(HOME, 'game');
+  // --player: this window IS the player, driven by tools/hands. Otherwise it only watches.
+  const asPlayer = process.argv.includes('--player');
+  const gameDir = join(HOME, asPlayer ? 'game-player' : 'game');
   const natives = join(HOME, 'natives');
   mkdirSync(gameDir, { recursive: true });
   mkdirSync(natives, { recursive: true });
   // Skip the first-run screens, so the window goes straight to the server.
   if (!existsSync(join(gameDir, 'options.txt'))) {
-    writeFileSync(join(gameDir, 'options.txt'), 'onboardAccessibility:false\ntutorialStep:none\nskipMultiplayerWarning:true\njoinedFirstServer:true\npauseOnLostFocus:false\n');
+    const options = ['onboardAccessibility:false', 'tutorialStep:none', 'skipMultiplayerWarning:true', 'joinedFirstServer:true', 'pauseOnLostFocus:false'];
+    // The player's window: a fixed interface size so screen positions can be worked out,
+    // stepping up blocks by itself as most people play, and a short view to spare the Mac.
+    if (asPlayer) options.push('guiScale:4', 'autoJump:true', 'renderDistance:6', 'fullscreen:false', 'narrator:0');
+    writeFileSync(join(gameDir, 'options.txt'), `${options.join('\n')}\n`);
   }
   const fill = {
     natives_directory: natives, launcher_name: 'gameplay_iterator_benchmark', launcher_version: '1',
     classpath: [...libs.map((lib) => lib.file), JAR].join(':'), classpath_separator: ':',
     library_directory: join(HOME, 'libraries'), version_name: '26.1', game_directory: gameDir,
     assets_root: join(HOME, 'assets'), assets_index_name: manifest.assetIndex.id,
-    auth_player_name: 'Watcher', auth_uuid: '00000000-0000-4000-8000-000000000001', auth_access_token: '0',
+    auth_player_name: asPlayer ? 'LocalModel' : 'Watcher',
+    auth_uuid: asPlayer ? '00000000-0000-4000-8000-000000000002' : '00000000-0000-4000-8000-000000000001', auth_access_token: '0',
     clientid: '0', auth_xuid: '0', user_type: 'legacy', version_type: manifest.type,
   };
   const substitute = (text) => text.replace(/\$\{(\w+)\}/g, (whole, key) => fill[key] ?? whole);
