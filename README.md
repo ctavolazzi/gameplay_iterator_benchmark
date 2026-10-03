@@ -186,7 +186,8 @@ reach of the ground and dig it), `craft:<item>`, `place:crafting_table` and
 | 13 | Andy-4.2-Micro | v002, written by the automatic coach | 25 | Chose `explore:north` 25 times and walked 511 blocks away from the forest. Nothing achieved. |
 | 17 | scripted, first option | v003, written by hand | 9 | Stone pickaxe in 7 decisions. |
 | 18 | Qwen3.5-0.8B | v003, written by hand | 14 | Stone pickaxe in 7 decisions, 77 seconds of game time, no damage, 3.3 s median per decision. Then only `explore` was left on the menu. |
-| 21 | Qwen3.5-0.8B | v003 | 14 | The same, with a game window attached and watching. 4.5 s median per decision. |
+| 20 | Qwen3.5-0.8B | v003 | 22 | A bad spawn, on a hill at y 83 with no stone in reach. Stone pickaxe only at decision 16: it lost sight of its table, crafted a second, and timed out walking back three times. Ended `error` at decision 22 from a reused connection. Three adapter fixes came from this run. |
+| 21 | Qwen3.5-0.8B | v003 | 14 | Played with a game window attached and watching. Stone pickaxe at decision 8, after one `explore` because no stone was in reach; 149 seconds of game time, no damage, 4.5 s median per decision. |
 | 23 | Qwen3.5-0.8B | v003 | 25 | 8 milestones, stone pickaxe at decision 8, 3 fall damage, then `explore:north` 16 times. |
 | 22 | Qwen3.5-0.8B | v004, written by hand | 25 | 11 milestones: stone pickaxe at decision 7, then iron, coal and a furnace by decision 13. No damage. |
 | 24 | Qwen3.5-0.8B | v004 | 16 | 11 milestones, furnace at decision 14, 3 damage. |
