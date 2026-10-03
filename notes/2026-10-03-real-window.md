@@ -30,7 +30,8 @@ model, prints the result and what is carried, and saves a picture of the window 
 | 34 | Qwen3.5-0.8B | All 11 milestones by decision 6, tick 8880. No damage. Median decision 6.6 s. Filmed: 482 seconds, 23,013 frames. |
 
 Both played `v005s`, the playbook written for the hidden bot, with no change. Run 34's video
-is `run-20261003-101030.mov`. Things seen in it that the next round should fix:
+is `run-20261003-101030-real-window.mov`, on CT's Desktop beside the first video (it is not
+in git). Things seen in it that the next round should fix:
 
 - Underground the picture is near black. The window's brightness is now set to "Bright" in
   its options, which takes effect the next time the window is opened new.
