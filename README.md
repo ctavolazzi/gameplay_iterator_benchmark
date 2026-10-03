@@ -11,7 +11,7 @@ real game.
 - [docs/loop.html](docs/loop.html): the first results on the test game, with a replay of two real runs.
 - [docs/plan.html](docs/plan.html): the original proposal. Parts of it are out of date; this README is current.
 
-## What is built (2026-10-02)
+## What is built (as of 2026-10-03)
 
 | Part | State |
 | --- | --- |
@@ -24,7 +24,9 @@ real game.
 | Testbed game, the harness's own fixture | Built and tested |
 | Runtime fetch: Java 25, Minecraft 26.1 server, two models | Built; fetched and verified on this machine |
 | Minecraft adapter: a server from one seed, a bot that joins, observes and acts | Built; run for real |
-| A game window to watch a run in (`tools/watch_client.mjs`) | Built; the launch itself is not yet tested |
+| A game window to watch a run in (`tools/watch_client.mjs`) | Built; used and filmed (run 26) |
+| Minecraft played in the real game window, by keys and mouse (`--body hands`) | Built; run for real (runs 33 and 34: all 11 milestones, the second with the local model and on video) |
+| The game window stays open between runs and goes back in by itself | Built; run for real |
 | Vault notes written by the local model | Not built |
 
 ## First results
@@ -60,6 +62,7 @@ npm test                                  # every check, including planted fault
 tools/fetch_runtime.sh                    # Java 25, the Minecraft 26.1 server, two models: 1.2 GB into runtime/
 ./iterate.mjs run                         # one run, scripted random player, latest playbook
 ./iterate.mjs run --player llama          # one run with the local model choosing
+./iterate.mjs run --game minecraft --player llama --body hands   # the same, played in the real game window
 ./iterate.mjs coach 4                     # hand run 4 to Claude; it may write the next playbook
 ./iterate.mjs loop --runs 3 --player llama   # run, coach, run again: three runs
 ./iterate.mjs replay 4                    # play run 4 again from the database and check every step
@@ -222,6 +225,32 @@ Things to know when reading the numbers: the pathfinder digs its own way through
 so cobblestone, dirt and sometimes coal are picked up without being chosen; and every v004
 run lost about 75 seconds walking back up to its crafting table after mining down. The
 adapter now lets a second table be placed near the bot, which the next playbook can use.
+
+### Two bodies, one brain
+
+The same playbook can be played by either of two bodies (`--body bot` or `--body hands`).
+
+- **The hidden bot** (`bot`, the default) is a second player with no screen. It is quick,
+  and it is what the runs above were played with.
+- **The real game window** (`hands`) is the game itself, with keys and the mouse pressed from
+  outside. You see a player walk, swing, open its inventory and click recipes into the
+  crafting grid. While the model thinks, the inventory is open. The window stays open between
+  runs and goes back into each new world by itself.
+
+| Run | Player | Playbook | Body | What happened |
+| --- | --- | --- | --- | --- |
+| 33 | scripted, first option | v005s | real window | All 11 milestones by decision 6, tick 6280. No damage. The game's own advancements, Stone Age and Getting an Upgrade, arrived as events. |
+| 34 | Qwen3.5-0.8B | v005s | real window | The local model choosing, filmed. All 11 milestones by decision 6, tick 8880. No damage. 6.6 s median per decision with the game window and the recorder running beside the model. |
+
+The real window takes about twice the game time of the hidden bot for the same road: it
+walks where the bot's pathfinder glides, and each recipe is a handful of real clicks.
+[notes/2026-10-03-real-window.md](notes/2026-10-03-real-window.md) says how it is played,
+how each part was checked, and what went wrong on the way.
+
+It needs two permissions from macOS for whatever program starts the run: Accessibility, to
+press keys, and Screen Recording, so the player can see whether a screen is open in the game.
+`tools/play_window.command` checks both and says what is missing. While it plays, the game
+window has the keyboard and the mouse.
 
 To watch in a game window: `tools/watch_client.mjs fetch` keeps its own 26.1 copy of the
 game under `runtime/client-26.1/` (82 MB beyond what a launcher with a newer version already

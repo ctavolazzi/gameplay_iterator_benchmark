@@ -8,6 +8,9 @@ For whoever picks this up next: a later Claude session, or a person. Read in thi
 
 | Note | What it covers |
 | --- | --- |
+| [2026-10-03-real-window.md](2026-10-03-real-window.md) | The real game window learns to play by keys and mouse: what works, how each part was checked, five faults found only by playing |
+| [runs/2026-10-03-two-coaches.md](runs/2026-10-03-two-coaches.md) | Two Claude coaches, one brief: v005s against v005o, read from the database |
+| [runs/v005s.md](runs/v005s.md), [runs/v005o.md](runs/v005o.md) | Each coach's own notes on its playbook and its three runs |
 | [2026-10-03-first-session.md](2026-10-03-first-session.md) | The first night: harness, the loop, Minecraft, the first video, and the mistakes |
 
 ## Standing rules
@@ -25,7 +28,10 @@ These come from the owner, CT, or from something that went wrong. Each has cost 
 - **Never delete `~/Desktop/run-20261003-080031.mov`**, the first video. Other videos in
   `recordings/` may go when disk is short.
 - **Start runs that matter from a Terminal window** (`open tools/play.command`), not from a
-  Claude session's own shell, where an interrupt can end them.
+  Claude session's own shell, where an interrupt can end them. The exception is a run in the
+  real game window (`--body hands`): it must be started by a program that macOS lets press
+  keys and see the screen, and Terminal may not be one. `runtime/bin/hands 0 check` says.
+- **A real-window run takes the keyboard and the mouse.** Say so before starting one.
 - **Commit and push each finished piece.** Notes for a run or a session go in this folder.
 - **No em dashes or en dashes** in anything written here.
 - **Look at the result, not the exit code.** Read the database row, the log line, a frame

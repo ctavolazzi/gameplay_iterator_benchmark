@@ -173,8 +173,10 @@ function launch() {
   // screen, which offers the last address used. Make sure that is this server.
   if (asPlayer) {
     const file = join(gameDir, 'options.txt');
-    const kept = readFileSync(file, 'utf8').split('\n').filter((line) => line && !line.startsWith('lastServer:'));
-    writeFileSync(file, `${[...kept, 'lastServer:localhost:25565'].join('\n')}\n`);
+    // Brightness is set to the game's own "Bright", as many players have it: the first
+    // film of this window was near black underground.
+    const kept = readFileSync(file, 'utf8').split('\n').filter((line) => line && !/^(lastServer|gamma):/.test(line));
+    writeFileSync(file, `${[...kept, 'lastServer:localhost:25565', 'gamma:1.0'].join('\n')}\n`);
   }
   const fill = {
     natives_directory: natives, launcher_name: 'gameplay_iterator_benchmark', launcher_version: '1',

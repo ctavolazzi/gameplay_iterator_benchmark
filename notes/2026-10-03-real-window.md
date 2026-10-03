@@ -22,6 +22,24 @@ Every line here was checked against the server's own record of what the player c
 The test tool is `tools/hands_stage.mjs`: it plays named actions one at a time with no
 model, prints the result and what is carried, and saves a picture of the window after each.
 
+## The two whole runs
+
+| Run | Brain | Result, from the database |
+| --- | --- | --- |
+| 33 | none (first option each time) | All 11 milestones by decision 6, tick 6280. No damage. |
+| 34 | Qwen3.5-0.8B | All 11 milestones by decision 6, tick 8880. No damage. Median decision 6.6 s. Filmed: 482 seconds, 23,013 frames. |
+
+Both played `v005s`, the playbook written for the hidden bot, with no change. Run 34's video
+is `run-20261003-101030.mov`. Things seen in it that the next round should fix:
+
+- Underground the picture is near black. The window's brightness is now set to "Bright" in
+  its options, which takes effect the next time the window is opened new.
+- One walk to a log timed out inside `get_wood` and the skill went for another tree.
+- After the goal the player stands still and opens its inventory three times: the `rest`
+  skill. A run should play on after its goal.
+- The first decision took 15.6 s, the rest 5 to 8 s: the model, the game window and the
+  recorder share four cores.
+
 ## How the real window is played
 
 - `tools/hands/hands.swift` presses keys and mouse buttons in the game's window. It needs

@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- gameplay_iterator_benchmark / docs/report.html v0.1.0, 2026-10-03. Every number here was read from data/benchmark.sqlite or measured on CT's Mac on 2026-10-02 and 2026-10-03. -->
+<!-- gameplay_iterator_benchmark / docs/report.html v0.2.0, 2026-10-03. Every number here was read from data/benchmark.sqlite or measured on CT's Mac on 2026-10-02 and 2026-10-03. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -103,6 +103,9 @@ a{color:var(--rust)}
   <tr><td class="num">22</td><td>Qwen3.5-0.8B</td><td>v004, by hand</td><td class="num">25</td><td class="ms"><span class="bar" style="width:88px"></span>11</td><td>Stone pickaxe, then iron, coal and a furnace by decision 13.</td></tr>
   <tr><td class="num">25</td><td>Andy-4.2-Micro</td><td>v004</td><td class="num">16</td><td class="ms"><span class="bar" style="width:88px"></span>11</td><td>The same, with the other model. Furnace at decision 12.</td></tr>
   <tr><td class="num">26</td><td>Qwen3.5-0.8B</td><td>v004</td><td class="num">16</td><td class="ms"><span class="bar" style="width:80px"></span>10</td><td>Played with a game window attached and recorded on video.</td></tr>
+  <tr><td class="num">31</td><td>Qwen3.5-0.8B</td><td>v005o, by an Opus coach</td><td class="num">16</td><td class="ms"><span class="bar" style="width:88px"></span>11</td><td>All 11 by decision 7. No failed action, no damage.</td></tr>
+  <tr><td class="num">29</td><td>Qwen3.5-0.8B</td><td>v005s, by a Sonnet coach</td><td class="num">16</td><td class="ms"><span class="bar" style="width:88px"></span>11</td><td>All 11 by decision 6, in half the game time of v004.</td></tr>
+  <tr><td class="num">34</td><td>Qwen3.5-0.8B</td><td>v005s</td><td class="num">9</td><td class="ms"><span class="bar" style="width:88px"></span>11</td><td>The same playbook played in the real game window, by keys and mouse, on video. All 11, no damage.</td></tr>
 </table>
 </div>
 <p>A milestone is a first: first log, planks, sticks, crafting table, table placed, wooden pickaxe, cobblestone, stone pickaxe, iron, coal, furnace. The model was the same size throughout. What changed was the playbook.</p>
@@ -117,24 +120,34 @@ a{color:var(--rust)}
   <li><strong>Wrong turns are part of the record.</strong> A server version nobody could join, a failure blamed on an outside cause that was a reused network connection, a bot that could not put its table down on grass. Each is written up in the notes with what fixed it.</li>
 </ul>
 
-<h2>The next step, already proven: the real game window</h2>
-<p>Until now the player has been a hidden bot, and the window only watched over its shoulder. A hidden bot has no screen, so nobody can see it open its inventory. The next body plays through the real game window by pressing keys and moving the mouse, so everything on screen is the game's own picture of a player playing.</p>
+<h2>Now playing in the real game window</h2>
+<p>At first the player was a hidden bot, and the window only watched over its shoulder. A hidden bot has no screen, so nobody can see it open its inventory. The second body plays through the real game window by pressing keys and moving the mouse, so everything on screen is the game's own picture of a player playing. Both bodies take the same commands, so one playbook serves both.</p>
 <div class="pair">
   <figure>
-    <img src="img/real-window-inventory.jpg" alt="The Minecraft inventory screen open in the real game: the character, the two by two crafting grid and empty inventory slots." width="1280" height="720">
-    <figcaption>The inventory, opened by a key press sent from outside the game.</figcaption>
+    <img src="img/run-34-crafting-planks.jpg" alt="The Minecraft inventory open in the real game. An oak log sits in the crafting grid and four planks wait in the result slot." width="1280" height="720">
+    <figcaption>Run 34: a log clicked into the crafting grid, and the planks it makes.</figcaption>
   </figure>
   <figure>
-    <img src="img/real-window-swing.jpg" alt="First-person view of the player's arm raised mid-swing against tree leaves." width="1280" height="720">
-    <figcaption>The arm mid-swing, from a held mouse button sent the same way.</figcaption>
+    <img src="img/run-34-stone-pickaxe-recipe.jpg" alt="The crafting table screen in the real game: three cobblestone across the top of the grid and two sticks down the middle, the pointer on the last stick." width="1280" height="720">
+    <figcaption>Run 34: the stone pickaxe recipe, clicked into the crafting table piece by piece.</figcaption>
   </figure>
 </div>
-<p>Tested on 2026-10-03: the inventory opens, the arm swings, and the camera turns to an exact direction on command. Walking was not proven in that test, because the player had spawned up in a tree.</p>
+<p>In run 34 the local model made every choice and the real window did the rest: it walked to a tree and felled it from the ground, clicked planks, sticks and a table together in its inventory, put the table down, made a pickaxe at it, dug down to stone, and came back with iron, coal and a furnace. All 11 milestones, no damage, 8 minutes on video. While the model thinks, the inventory is open, as a person might leave it. Between runs the window stays open and goes back into the new world by itself.</p>
+<p>It takes about twice the game time of the hidden bot, and it found five faults that no offline test could see, such as a table that was placed but reported as not placed, and cobblestone left lying one block out of reach. The notes say how each was found and fixed.</p>
+
+<h2>Two coaches, one brief</h2>
+<p>Two Claude subagents, a Sonnet 5.5 and an Opus 5.5, were each handed the same playbook and the same stored runs, and each wrote the next version without seeing the other's. The local model stayed the brain in every run.</p>
+<ul class="plain">
+  <li><strong>Both roughly halved the road.</strong> v004 needed 12 to 14 decisions and about 6000 to 6700 game ticks to reach all 11 milestones. The Sonnet coach's playbook needs 6 decisions and about 3300 ticks; the Opus coach's needs 7 to 8 and about 3800 to 4100.</li>
+  <li><strong>They found the same main fault by themselves</strong>: a long walk back to a far crafting table. Both fixed it by putting a new table down where the work is.</li>
+  <li><strong>The Sonnet coach's was faster; the Opus coach's was steadier while being written</strong>, and its notes found faults underneath that no playbook can fix. Three runs each on one world is a small sample.</li>
+  <li><strong>The cost of the speed</strong>: the model is now offered a single option at 13 to 15 of its 16 decisions. The playbook has become a good set of reflexes. The model's choices need to move up a level, to which goal a run goes for and what to do about a threat.</li>
+</ul>
 
 <h2>What comes next</h2>
 <ol class="phases">
-  <li class="now"><span class="when">Now</span><h3>Play through the real window</h3><p>Walk planned paths with the W key, dig by holding the mouse, craft by clicking in the real inventory and crafting table. Open the inventory while the model thinks. Done when a stone pickaxe is reached this way and filmed.</p></li>
-  <li><span class="when">Next</span><h3>Reflexes: its own kind of mob</h3><p>A fast layer of plain code that reacts every moment, with no model call: lose health, so close the menu and face the cause; flee or fight; eat; take shelter at night. The model sets the aim, the reflexes keep it alive, and what emerges from the two together is the interesting part.</p></li>
+  <li><span class="when">Done</span><h3>Play through the real window</h3><p>Walking, digging, picking up, crafting by clicking in the real inventory and crafting table, the inventory open while the model thinks. Reached and filmed in run 34.</p></li>
+  <li class="now"><span class="when">Now</span><h3>Reflexes: its own kind of mob</h3><p>A fast layer of plain code that reacts every moment, with no model call: lose health, so close the menu and face the cause; flee or fight; eat; take shelter at night. The model sets the aim, the reflexes keep it alive, and what emerges from the two together is the interesting part.</p></li>
   <li><span class="when">Next</span><h3>The game's own achievements as goals</h3><p>Each run aims at one of Minecraft's advancements, which the server already announces in its log. Once it gets there, the run plays on freely, to gather what the next playbook needs. A house and a bed come first.</p></li>
   <li><span class="when">Then</span><h3>A corpus of runs</h3><p>Decisions, model answers, skills called, errors, encounters won and lost, achievements and timings, for every run, with the playbook and code version beside them. Notes for each run go in the repository for whoever reads next.</p></li>
   <li><span class="when">Then</span><h3>Coaches and brains compared</h3><p>The same runs improved by different coaches, such as two Claude models, to see whose playbooks go further. Then different local models as the brain, and menus widened to find where a small model's judgment holds.</p></li>
@@ -161,7 +174,7 @@ a{color:var(--rust)}
   <li><a href="plan.html">The original proposal</a>, kept as it was written.</li>
 </ul>
 
-<div class="foot">gameplay_iterator_benchmark, docs/report.html, v0.1.0, 2026-10-03. Built by CT with Claude. The Andy models are by the Mindcraft CE team: this work uses data and models created by @Sweaterdog, and the Mindcraft Project.</div>
+<div class="foot">gameplay_iterator_benchmark, docs/report.html, v0.2.0, 2026-10-03. Built by CT with Claude. The Andy models are by the Mindcraft CE team: this work uses data and models created by @Sweaterdog, and the Mindcraft Project.</div>
 </main>
 </body>
 </html>
