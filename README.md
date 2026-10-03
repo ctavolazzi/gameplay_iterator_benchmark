@@ -186,11 +186,24 @@ reach of the ground and dig it), `craft:<item>`, `place:crafting_table` and
 | 13 | Andy-4.2-Micro | v002, written by the automatic coach | 25 | Chose `explore:north` 25 times and walked 511 blocks away from the forest. Nothing achieved. |
 | 17 | scripted, first option | v003, written by hand | 9 | Stone pickaxe in 7 decisions. |
 | 18 | Qwen3.5-0.8B | v003, written by hand | 14 | Stone pickaxe in 7 decisions, 77 seconds of game time, no damage, 3.3 s median per decision. Then only `explore` was left on the menu. |
+| 21 | Qwen3.5-0.8B | v003 | 14 | The same, with a game window attached and watching. 4.5 s median per decision. |
+| 23 | Qwen3.5-0.8B | v003 | 25 | 8 milestones, stone pickaxe at decision 8, 3 fall damage, then `explore:north` 16 times. |
+| 22 | Qwen3.5-0.8B | v004, written by hand | 25 | 11 milestones: stone pickaxe at decision 7, then iron, coal and a furnace by decision 13. No damage. |
+| 24 | Qwen3.5-0.8B | v004 | 16 | 11 milestones, furnace at decision 14, 3 damage. |
+| 25 | Andy-4.2-Micro | v004 | 16 | 11 milestones, furnace at decision 12, no damage. |
 
 What that shows: with raw actions or a long briefing, these 0.5 GB models repeat one
-command for a whole run. v003 works because each skill is a whole job and the menu lists
-only what is useful now, most useful first. Most decisions in run 18 had one or two
-options, so it shows the loop working more than it shows the model's judgment.
+command for a whole run. v003 and v004 work because each skill is a whole job and the menu
+lists only what is useful now, most useful first. Most decisions have one or two options,
+so these runs show the loop working more than they show the model's judgment.
+
+v003 and v004 were written by a Claude in chat reading the database, not by the automatic
+coach. That costs nothing beyond the chat, and it did better: the one automatic rewrite
+(v002) made things worse. Runs 23 and 22 are a fair pair on the same code and budget.
+Things to know when reading the numbers: the pathfinder digs its own way through terrain,
+so cobblestone, dirt and sometimes coal are picked up without being chosen; and every v004
+run lost about 75 seconds walking back up to its crafting table after mining down. The
+adapter now lets a second table be placed near the bot, which the next playbook can use.
 
 To watch in a game window: `tools/watch_client.mjs fetch` keeps its own 26.1 copy of the
 game under `runtime/client-26.1/` (82 MB beyond what a launcher with a newer version already

@@ -12,8 +12,8 @@ else
   echo "No game window this time: the 26.1 game files are not all here yet."
   echo "(tools/download_game.command fetches them.) The run is shown here in the terminal."
 fi
-# Pinned to the playbook that has reached the stone pickaxe three times running (runs 17,
-# 18 and 21). Move this on when a later one has proven itself in the game.
-./iterate.mjs run --game minecraft --player llama --calls 14 --playbook v003 $WINDOW
+# Pinned to a playbook that has proven itself in the game: v004 reached all 11 milestones
+# (stone pickaxe, iron, coal, furnace) in three runs out of three, runs 22, 24 and 25.
+./iterate.mjs run --game minecraft --player llama --calls 16 --playbook v004 $WINDOW
 echo
 echo "The run is over and saved in the database."

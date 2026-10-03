@@ -233,7 +233,10 @@ export function createAdapter({ root } = {}) {
       const found = recipeFor(want);
       if (found) list.push({ name: `craft:${want}`, about: `make ${want} from what you carry` });
     }
-    if (inventory.crafting_table && !nearest('crafting_table', 32)) {
+    // A carried table can be put down unless one is already right here. It used to be
+    // refused within 32 blocks of any table, which left a bot that had mined its way down
+    // with a 75 second walk back up to the old one (runs 22, 24 and 25, once each).
+    if (inventory.crafting_table && !nearest('crafting_table', 8)) {
       list.push({ name: 'place:crafting_table', about: 'put your crafting table on the ground so tools can be made' });
     }
     for (const direction of Object.keys(DIRECTIONS)) {
@@ -393,7 +396,7 @@ export function createAdapter({ root } = {}) {
       return [
         { name: 'collect:<block>', about: 'walk to the nearest block of that kind and dig one, for example collect:oak_log or collect:stone. Offered only for blocks within 32 blocks; stone and ores only when a pickaxe is carried. Result: { ok, got: { item: count } }' },
         { name: 'craft:<item>', about: `make one of: ${CRAFTABLE.join(', ')}. Offered only when what is carried is enough (and a crafting table is within 24 blocks for tools). craft:planks turns 1 log into 4 planks. Result: { ok, made }` },
-        { name: 'place:crafting_table', about: 'put a carried crafting table on the ground. Offered when one is carried and none is within 24 blocks.' },
+        { name: 'place:crafting_table', about: 'put a carried crafting table on the ground. Offered when one is carried and none is within 8 blocks. A craft that needs a table uses the nearest one within 32 blocks and walks to it, so far from the old table it is quicker to craft and place a new one.' },
         { name: 'explore:<north|south|east|west>', about: 'walk about 24 blocks that way. Always offered.' },
         { name: '(observation)', about: 'observe() gives { time: day or night, health 0 to 20, food, pos, carrying: { item: count }, nearest: { block: distance }, monsters: { name: distance } }' },
       ];
