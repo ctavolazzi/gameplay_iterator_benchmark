@@ -303,40 +303,59 @@ export function createHandsAdapter({ root }) {
     return { ok: false, error: `dug the ${name} but did not pick up its ${wanted} (${seen})` };
   }
 
+  // Open the screen a recipe needs, unless a screen that will do is open already. A player
+  // making planks, sticks and a table does it in one visit to the inventory, so a screen is
+  // left open after a craft and closed by whatever comes next that is not a craft.
+  async function screenFor(recipe) {
+    const open = hands.screen();
+    if (open === 'table' || (open === 'inventory' && !recipe.table)) {
+      if ((await hands.panelShowing()) !== false) return { ok: true, table: open === 'table' };
+      hands.setScreen(null);                       // it was closed behind our back
+    } else if (open) {
+      await hands.closeScreen();
+    }
+    if (!recipe.table) {
+      return (await hands.openInventory()) ? { ok: true, table: false } : { ok: false, error: 'could not open the inventory' };
+    }
+    const table = nearest('crafting_table', 32);
+    if (!table) return { ok: false, error: 'no crafting table nearby' };
+    if (table.position.distanceTo(feet()) > 3) {
+      const walk = await walkTo(new goals.GoalNear(table.position.x, table.position.y, table.position.z, 2), 75000);
+      if (!walk.ok) return { ok: false, error: `could not get to the crafting table: ${walk.why}` };
+    }
+    // Right click the table, and see that its screen came up before clicking a recipe:
+    // clicks meant for a screen that is not there would be swings and stray turns.
+    for (let tries = 0; tries < 2; tries++) {
+      const { yaw, pitch } = aim(feet(), table.position.offset(0.5, 0.5, 0.5));
+      await hands.look(yaw, pitch, 260);
+      await hands.press('right');
+      await pause(90);
+      await hands.unpress();
+      await pause(650);
+      if ((await hands.panelShowing()) !== false) {
+        hands.setScreen('table');
+        return { ok: true, table: true };
+      }
+    }
+    return { ok: false, error: 'could not open the crafting table' };
+  }
+
   async function craft(want) {
     const recipe = RECIPES[want];
     if (!recipe) return { ok: false, error: `no recipe for ${want}` };
     const before = counts(await hands.carried());
-    if (recipe.table) {
-      const table = nearest('crafting_table', 32);
-      if (!table) return { ok: false, error: 'no crafting table nearby' };
-      if (table.position.distanceTo(feet()) > 3) {
-        const walk = await walkTo(new goals.GoalNear(table.position.x, table.position.y, table.position.z, 2), 75000);
-        if (!walk.ok) return { ok: false, error: `could not get to the crafting table: ${walk.why}` };
-      }
-      // Right click the table, and see that its screen came up before clicking a recipe:
-      // clicks meant for a screen that is not there would be swings and stray turns.
-      let opened = false;
-      for (let tries = 0; tries < 2 && !opened; tries++) {
-        const { yaw, pitch } = aim(feet(), table.position.offset(0.5, 0.5, 0.5));
-        await hands.look(yaw, pitch, 260);
-        await hands.press('right');
-        await pause(90);
-        await hands.unpress();
-        await pause(650);
-        opened = (await hands.panelShowing()) !== false;
-      }
-      if (!opened) return { ok: false, error: 'could not open the crafting table' };
-      hands.setScreen('table');
-    } else if (!(await hands.openInventory())) {
-      return { ok: false, error: 'could not open the inventory' };
+    const screen = await screenFor(recipe);
+    if (!screen.ok) return screen;
+    const clicked = await hands.craftOnScreen(recipe, screen.table);
+    if (!clicked) {
+      await hands.closeScreen();
+      return { ok: false, error: `cannot craft ${want} with what you carry` };
     }
-    const clicked = await hands.craftOnScreen(recipe, recipe.table);
-    await hands.closeScreen();
-    if (!clicked) return { ok: false, error: `cannot craft ${want} with what you carry` };
     await pause(300);
     const made = gains(before, counts(await hands.carried()));
-    return Object.keys(made).length ? { ok: true, made } : { ok: false, error: `clicked the recipe for ${want} but nothing was made` };
+    if (Object.keys(made).length) return { ok: true, made };
+    await hands.closeScreen();                       // start the next try from a clean screen
+    return { ok: false, error: `clicked the recipe for ${want} but nothing was made` };
   }
 
   async function placeTable() {
@@ -350,24 +369,41 @@ export function createHandsAdapter({ root }) {
     // The table is down when it is no longer carried, wherever it landed: a leaf or a
     // flower in the way of the crosshair takes it a block off the spot that was meant.
     const down = async () => !(await hands.carried()).some((s) => s.item === 'crafting_table');
-    const base = feet().floored();
+    // Any face of a solid block the crosshair can reach will take it: the floor ahead for
+    // choice, a wall when the player stands in a pit it has dug. The six faces are in the
+    // order the world's ray casting numbers them: bottom, top, north, south, west, east.
+    const FACES = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+    const from = feet();
+    const base = from.floored();
+    const eye = from.offset(0, EYE_HEIGHT, 0);
     const spots = [];
-    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 1], [1, 2], [-2, 1], [-1, 2], [2, -1], [1, -2], [-2, -1], [-1, -2], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-      for (const dy of [-1, 0, -2]) {
-        const ground = eyes.blockAt(base.offset(dx, dy, dz));
-        const above = eyes.blockAt(base.offset(dx, dy + 1, dz));
-        const open = above && above.boundingBox === 'empty' && !/water|lava/.test(above.name);
-        if (ground?.boundingBox !== 'block' || !open) continue;
-        const from = feet();
-        const { yaw, pitch } = aim(from, ground.position.offset(0.5, 1, 0.5));
-        const hit = sight(from, yaw, pitch);
-        spots.push({ yaw, pitch, clear: Boolean(hit && hit.position.equals(ground.position)) });
+    for (let dx = -3; dx <= 3; dx++) {
+      for (let dy = -2; dy <= 3; dy++) {
+        for (let dz = -3; dz <= 3; dz++) {
+          const block = eyes.blockAt(base.offset(dx, dy, dz));
+          if (block?.boundingBox !== 'block' || block.name === 'crafting_table') continue;
+          FACES.forEach(([nx, ny, nz], face) => {
+            const cell = block.position.offset(nx, ny, nz);
+            const there = eyes.blockAt(cell);
+            if (!there || there.boundingBox !== 'empty' || /water|lava/.test(there.name)) return;
+            // Not where the player stands: the game refuses a block inside a body.
+            const inBody = Math.abs(cell.x + 0.5 - from.x) < 0.8 && Math.abs(cell.z + 0.5 - from.z) < 0.8
+              && cell.y + 1 > from.y && cell.y < from.y + 1.8;
+            if (inBody) return;
+            const point = block.position.offset(0.5 + nx * 0.5, 0.5 + ny * 0.5, 0.5 + nz * 0.5);
+            const far = point.distanceTo(eye);
+            if (far > REACH - 0.3) return;
+            const { yaw, pitch } = aim(from, point);
+            const hit = sight(from, yaw, pitch);
+            if (!hit || !hit.position.equals(block.position) || hit.face !== face) return;
+            spots.push({ yaw, pitch, rank: (face === 1 ? 0 : 10) + Math.abs(far - 2.5) });
+          });
+        }
       }
     }
-    // Spots the crosshair reaches with nothing in the way come first.
-    spots.sort((a, b) => Number(b.clear) - Number(a.clear));
+    spots.sort((a, b) => a.rank - b.rank);
     let tried = 0;
-    for (const spot of spots.slice(0, 5)) {
+    for (const spot of spots.slice(0, 6)) {
       tried += 1;
       await hands.look(spot.yaw, spot.pitch, 240);
       await hands.press('right');
@@ -376,7 +412,7 @@ export function createHandsAdapter({ root }) {
       await pause(550);
       if (await down()) return { ok: true, placed: 'crafting_table' };
     }
-    return { ok: false, error: `could not put the table down (${tried} spots tried)` };
+    return { ok: false, error: `could not put the table down (${tried} of ${spots.length} spots tried)` };
   }
 
   async function explore(direction) {
@@ -513,6 +549,7 @@ export function createHandsAdapter({ root }) {
       say(`chose ${action.name}`);
       let result;
       try {
+        if (kind !== 'craft') await hands.closeScreen();
         if (kind === 'collect') result = await collect(what);
         else if (kind === 'craft') result = await craft(what);
         else if (kind === 'place') result = await placeTable();
@@ -522,7 +559,7 @@ export function createHandsAdapter({ root }) {
         result = { ok: false, error: String(error?.message ?? error).slice(0, 160) };
         await hands.releaseAll();
       }
-      await hands.settle().catch(() => {});
+      if (kind !== 'craft' || !result.ok) await hands.settle().catch(() => {});
       const events = pending.splice(0);
       const after = counts(await hands.carried());
       events.push(...gainEvents(before, after, reached, (milestone) => say(`milestone: ${milestone}`)));

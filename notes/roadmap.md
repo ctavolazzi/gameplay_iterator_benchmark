@@ -14,16 +14,17 @@ Each phase says what "done" means, so it can be checked and not argued.
 The hidden bot has no screen, so its inventory can never be shown. The real window, driven
 by keys and mouse (`tools/hands`), shows everything.
 
-- Proven on 2026-10-03 (`tools/hands_probe.mjs`): a key press opens the inventory, a held
-  mouse button swings the arm, the server's `rotate` command turns the camera to an exact
-  direction. Not proven: walking (the player had spawned in a tree).
-- To build: follow a planned path with W, dig by holding the mouse, craft by clicking in the
-  real inventory and crafting table, place a block, pick up drops.
+- Built and played on 2026-10-03 (`--body hands`; see
+  [2026-10-03-real-window.md](2026-10-03-real-window.md)): the player follows a planned path
+  with W held, fells a tree from the ground, digs by holding the mouse, picks up drops,
+  crafts by clicking in the real inventory and crafting table, and puts a table down.
 - A silent helper bot, a spectator named Eyes, supplies what the screen cannot: the blocks
   around the player and a planned path.
-- While the model thinks, the inventory is open. On damage it closes and the body reacts.
+- While the model thinks, the inventory is open. On damage it closes. What the body then
+  does about the damage is phase 2.
 - The game window stays open between runs and rejoins the new server by itself.
 - Both bodies take the same action names, so one playbook serves both.
+- The player reads its own screen to know whether an inventory is showing.
 
 Done when: a stone pickaxe is reached through the real window, on video, with the
 inventory and crafting table screens visible.
