@@ -12,6 +12,7 @@ import { appendFileSync, existsSync, statSync } from 'node:fs';
 const NOTES = new URL('../data/claude_player/notes.jsonl', import.meta.url);
 const ADVICE = /\b(you (can|could|should|might|may|need|must|don'?t|do not|probably|want)|try|instead|don'?t|do not|never|always|make sure|remember|tip|hint|better|no need|careful|watch out|avoid|use (the|a|an|your)|it'?s (faster|safer|better|easier)|if (there|you)|when you|should)\b/;
 const PROGRAMS = /codex|bot$/i;
+const PEERS = new Set(['Codex', 'CodexAstra']);
 const list = (things) => things.join(', ') || 'nothing';
 // Another file of the player, loaded again only when it has changed (as player.mjs does).
 const load = (file) => {
@@ -87,9 +88,10 @@ function toBed({ bot, memory, who, stop }) {
 }
 
 export async function heard({ bot, memory, username, message, status, event, say, stop }) {
+  const program = PEERS.has(username);
+  if (username === bot.username || (PROGRAMS.test(username) && !program)) return;
   const text = message.toLowerCase();
   const now = Date.now();
-  const program = PROGRAMS.test(username);
   let asked = reads(message);
   if (program) {
     // CT, 2026-10-04: "You both can communicate with one another in the game chat." Another
@@ -196,7 +198,7 @@ export async function heard({ bot, memory, username, message, status, event, say
     answer = program ? `${username}: that one is for my Claude session. It reads this chat and answers here in a few minutes.`
       : `I heard you, ${username}. I am ${doing}. I have passed that on to the Claude session, which answers in a few minutes.`;
   }
-  say(answer);
+  say(program && !answer.startsWith(`${username}:`) ? `${username}: ${answer}` : answer);
 }
 
 // What the game itself says, not a player: the count of sleepers, and each player's
@@ -216,7 +218,7 @@ export async function overheard({ bot, memory, text, event, say, stop }) {
   let score;
   try { score = await load('./score.mjs'); } catch { return; }
   const result = (() => { try { return score.read(); } catch { return null; } })();
-  if (!result || now < result.since.getTime() || !score.news(text, result.challenge.players)) return;
+  if (!result || now < result.since.getTime() || !score.news(text, result.challenge.players, result.challenge.aliases)) return;
   // The server writes its log a moment after it tells the players.
   await new Promise((resolve) => setTimeout(resolve, 3000));
   const line = score.line(score.read());

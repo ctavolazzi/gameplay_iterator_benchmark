@@ -1,0 +1,53 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { digest, page } from '../claude_player/report.mjs';
+
+const START = Date.parse('2026-10-04T14:49:00Z');
+const at = (seconds) => new Date(START + seconds * 1000).toISOString();
+
+// Ten minutes of journal like the ones around 07:49 on 2026-10-04: a climb that failed the same
+// way over and over, a fight that stopped a step, a death, a request the player had no rule for.
+const ROWS = [
+  { at: at(0), kind: 'skill', skill: 'collect', args: { block: 'deepslate_diamond_ore', count: 3 }, ok: true, note: 'picked up 3 of 3', ms: 30000, goal: 'mining' },
+  { at: at(31), kind: 'skill', skill: 'collect', args: { block: 'deepslate_diamond_ore', count: 3 }, ok: false, note: 'reflex: fighting a zombie', ms: 6000, goal: 'mining' },
+  { at: at(40), kind: 'fight', foe: 'zombie' },
+  { at: at(50), kind: 'chat', username: 'fogsift', message: 'Claude can you build a bigger base?' },
+  { at: at(50), kind: 'chat_open', username: 'fogsift', message: 'Claude can you build a bigger base?' },
+  { at: at(58), kind: 'skill', skill: 'surface', args: {}, ok: false, note: 'climbed 0 blocks to -3, still under ground', ms: 258, goal: 'asked' },
+  { at: at(59), kind: 'skill', skill: 'surface', args: {}, ok: false, note: 'climbed 0 blocks to -3, still under ground', ms: 751, goal: 'asked' },
+  { at: at(60), kind: 'skill', skill: 'surface', args: {}, ok: false, note: 'climbed 0 blocks to -4, still under ground', ms: 211, goal: 'asked' },
+  { at: at(90), kind: 'damage', from: 20, to: 14.5 },
+  { at: at(95), kind: 'death', where: { x: -394, y: -47, z: 436 }, doing: 'collect', night: true },
+  { at: at(200), kind: 'advancement', name: 'Hot Stuff' },
+];
+
+test('the report puts what needs deciding first: a death, then what was asked, then what keeps failing', () => {
+  const d = digest(ROWS, { from: START, to: START + 600000,
+    status: { ready: true, thought: { stuck: { base: 'the walk home waits for morning' } } },
+    asks: [{ who: 'fogsift', when: 'today', words: 'get some crops going', done: false }, { who: 'CT', when: 'yesterday', words: 'sleep in a bed', done: true }] });
+  assert.match(d.decide[0], /^Died at .* at -394 -47 436 during collect, at night/);
+  assert.match(d.decide[1], /fogsift said .* "Claude can you build a bigger base\?"/);
+  // The same failure with a different number in it is the same failure.
+  assert.match(d.decide[2], /^Failed 3 times the same way: surface/);
+  assert.match(d.decide[3], /Goal "base" is stuck/);
+  assert.match(d.decide[4], /^Stood still for \d+ s of 600 s/);
+  assert.match(d.decide.at(-1), /get some crops going/);
+  // A step a reflex stopped is not that step failing, and what is done is not asked for again.
+  assert.ok(!d.decide.some((line) => /reflex|sleep in a bed/.test(line)));
+  assert.equal(d.steps, 5);
+  assert.equal(d.failed, 4);
+  assert.equal(d.deaths, 1);
+  assert.equal(d.damage, 5.5);
+  assert.deepEqual(d.advancements, ['Hot Stuff']);
+  assert.equal(d.byGoal.asked.failed, 3);
+  const text = page(d, { look: { says: 'Looking north. I see stone.', file: '/tmp/x.png' } });
+  assert.ok(text.indexOf('## To decide') < text.indexOf('## Numbers'));
+  assert.match(text, /\| asked \| 3 \| 3 \| 1 \|/);
+  assert.match(text, /picture: \/tmp\/x\.png/);
+});
+
+test('a quiet stretch with nothing wrong says so', () => {
+  const d = digest([{ at: at(0), kind: 'skill', skill: 'collect', args: {}, ok: true, ms: 100000, goal: 'mining' }], { from: START, to: START + 110000, status: { ready: true } });
+  assert.deepEqual(d.decide, []);
+  assert.match(page(d), /Nothing asks for a decision/);
+});

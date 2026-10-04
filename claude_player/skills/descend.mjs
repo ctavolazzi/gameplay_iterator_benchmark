@@ -4,9 +4,12 @@ export default async function descend({ bot, api }, { toY }) {
   if (typeof toY !== 'number') return { ok: false, note: 'say how deep: toY' };
   const from = Math.floor(bot.entity.position.y);
   if (from <= toY) return { ok: true, note: `already at ${from}` };
-  await api.walk(new api.goals.GoalY(toY), 240000, `digging down to ${toY}`).catch((error) => {
-    if (/reflex|asked to stop|died|out of time/.test(error.message)) throw error;
+  let why = '';
+  await api.walk(new api.goals.GoalY(toY), 240000, `digging down to ${toY}`, true).catch((error) => {
+    if (/reflex|asked|died|out of time/.test(error.message)) throw error;
+    why = `: ${error.message}`;
   });
   const now = Math.floor(bot.entity.position.y);
-  return { ok: now <= from - 3, note: `went from ${from} to ${now}, wanted ${toY}` };
+  const ok = now <= from - 3;
+  return { ok, note: `went from ${from} to ${now}, wanted ${toY}${ok ? '' : why}` };
 }

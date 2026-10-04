@@ -18,11 +18,14 @@ const DIED = /^(was (slain|shot|blown up|killed|pummeled|fireballed|impaled|squa
 const NOT_NEWS = /^(joined the game|left the game|lost connection|logged in with|moved (too quickly|wrongly)|was kicked|issued server command|\(formerly known as)/;
 
 // One line of the server's log: { time, player, kind: advancement | death | other, what }, or
-// null when it is not the game speaking about one of the players.
-export function parseLine(line, players) {
+// null when it is not the game speaking about one of the players. aliases gives a player's
+// earlier names: Codex's player was CodexAstra until 07:56 on 2026-10-04.
+export function parseLine(line, players, aliases = {}) {
   const hit = /^\[(\d\d:\d\d:\d\d)\] \[Server thread\/INFO\]: (\S+) (.+)$/.exec(line);
-  if (!hit || !players.includes(hit[2])) return null;
-  const [, time, player, rest] = hit;
+  if (!hit) return null;
+  const [, time, name, rest] = hit;
+  const player = aliases[name] ?? name;
+  if (!players.includes(player)) return null;
   const earned = /^has (?:made the advancement|completed the challenge|reached the goal) \[(.+?)\]/.exec(rest);
   if (earned) return { time, player, kind: 'advancement', what: earned[1] };
   if (DIED.test(rest)) return { time, player, kind: 'death', what: rest };
@@ -31,14 +34,14 @@ export function parseLine(line, players) {
 }
 
 // The same for a line as a player in the game receives it, which has no clock in front.
-export function news(text, players) {
-  return parseLine(`[00:00:00] [Server thread/INFO]: ${text}`, players);
+export function news(text, players, aliases = {}) {
+  return parseLine(`[00:00:00] [Server thread/INFO]: ${text}`, players, aliases);
 }
 
 // Every such line of one log, each with the moment it happened. The log has clock times only:
 // day is the date the log began ("2026-10-04"), and a clock that runs backwards by more than
 // an hour means midnight went by.
-export function events(lines, day, players) {
+export function events(lines, day, players, aliases = {}) {
   const out = [];
   let date = new Date(`${day}T00:00:00`);
   let last = -1;
@@ -48,7 +51,7 @@ export function events(lines, day, players) {
     const seconds = clock[1] * 3600 + clock[2] * 60 + +clock[3];
     if (seconds < last - 3600) date = new Date(date.getTime() + 86400000);
     last = seconds;
-    const row = parseLine(line, players);
+    const row = parseLine(line, players, aliases);
     if (row) out.push({ ...row, at: new Date(date.getTime() + seconds * 1000) });
   }
   return out;
@@ -89,12 +92,12 @@ export function read() {
   for (const name of existsSync(LOGS) ? readdirSync(LOGS).sort() : []) {
     const path = new URL(name, LOGS);
     if (name === 'latest.log') {
-      rows.push(...events(readFileSync(path, 'utf8').split('\n'), localDay(statSync(path).birthtime), challenge.players));
+      rows.push(...events(readFileSync(path, 'utf8').split('\n'), localDay(statSync(path).birthtime), challenge.players, challenge.aliases));
       continue;
     }
     const day = /^(\d{4}-\d\d-\d\d)-\d+\.log\.gz$/.exec(name)?.[1];
     if (!day || new Date(`${day}T00:00:00`).getTime() < since.getTime() - 2 * 86400000) continue;
-    rows.push(...events(gunzipSync(readFileSync(path)).toString('utf8').split('\n'), day, challenge.players));
+    rows.push(...events(gunzipSync(readFileSync(path)).toString('utf8').split('\n'), day, challenge.players, challenge.aliases));
   }
   return { challenge, since, score: tally(rows, { players: challenge.players, since }) };
 }

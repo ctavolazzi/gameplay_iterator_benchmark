@@ -186,14 +186,24 @@ export function make(bot, signal, memory = {}) {
     }
   }
 
-  async function walk(goal, ms = 45000, what = 'walking') {
+  // strict: for a walk whose whole point is to get somewhere (a climb, a leg of a journey).
+  // The pathfinder ends a walk it has no path for at all in the same way as one it has
+  // finished: quietly. At 07:49 on 2026-10-04 a climb "arrived" 524 times in 5 minutes without
+  // moving. A strict walk that ended at once, went nowhere and is not at its goal is no path.
+  async function walk(goal, ms = 45000, what = 'walking', strict = false) {
     check();
     await offTheBed();
+    const from = bot.entity.position.clone();
+    const started = Date.now();
     try {
       await within(bot.pathfinder.goto(goal), ms, what);
     } catch (error) {
       bot.pathfinder.setGoal(null);
       throw error;
+    }
+    if (strict && Date.now() - started < 1500 && bot.entity.position.distanceTo(from) < 0.5
+      && typeof goal.isEnd === 'function' && !goal.isEnd(bot.entity.position.floored())) {
+      throw new Error(`No path to the goal! (${what}: the pathfinder gave no way at all)`);
     }
   }
 

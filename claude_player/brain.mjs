@@ -70,10 +70,14 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const from = bot.entity.position;
       const far = Math.hypot(from.x - bedAt.x, from.y - bedAt.y, from.z - bedAt.z);
       const why = `${memory.order.player} asked in chat for everyone to sleep`;
-      memory.thought = { at: new Date().toISOString(), goal: 'asked to sleep', step: far > 20 ? 'goto' : 'sleep', why, stuck: {} };
-      if (far > 20 && from.y < bedAt.y - 16) return { skill: 'surface', args: {}, why, goal: 'asked', timeout: 600, pass: { night: true } };
-      if (far > 20) return { skill: 'goto', args: { x: bedAt.x, y: bedAt.y, z: bedAt.z, range: 3 }, why, goal: 'asked', timeout: 240, pass: { night: true } };
-      return { skill: 'sleep', args: {}, why, goal: 'asked', timeout: 130, pass: { night: true } };
+      const step = far > 20 && from.y < bedAt.y - 16 ? { skill: 'surface', args: {}, why, goal: 'asked', timeout: 600, pass: { night: true } }
+        : far > 20 ? { skill: 'goto', args: { x: bedAt.x, y: bedAt.y, z: bedAt.z, range: 3 }, why, goal: 'asked', timeout: 240, pass: { night: true } }
+          : { skill: 'sleep', args: {}, why, goal: 'asked', timeout: 130, pass: { night: true } };
+      // A step that has just failed waits its turn like any other. At 07:49 on 2026-10-04 the
+      // climb to the bed was asked for 524 times in 5 minutes and failed in a quarter of a second each time.
+      const held = (memory.blocked[signature(step)]?.until ?? 0) > now;
+      memory.thought = { at: new Date().toISOString(), goal: 'asked to sleep', step: held ? 'waiting to try the way to bed again' : step.skill, why, stuck: {} };
+      return held ? null : step;
     }
   }
   if (memory.order?.kind === 'come') {
@@ -452,7 +456,8 @@ export async function learn({ row, memory, fresh }) {
   memory.blocked ??= {};
   memory.explored ??= {};
   const sig = signature(row);
-  const interrupted = /^reflex:|night|died|asked to stop|disconnected|process stopping/.test(row.note ?? '');
+  // "fogsift asked" and "the game asked" are how a chat order and the sleepers' count stop a step.
+  const interrupted = /^reflex:|night|died|asked|disconnected|process stopping/.test(row.note ?? '');
   if (row.ok) delete memory.blocked[sig];
   else if (!interrupted) {
     const b = memory.blocked[sig] ??= { fails: 0 };

@@ -50,7 +50,7 @@ const world = (over = {}) => {
   const call = (username, message) => heard({
     bot: { username: 'Claude', isSleeping: false, time: { timeOfDay: over.hour ?? 14000, day: 51 },
       entity: { position: over.at ?? vec(-352, 59, 459) },
-      players: { Claude: {}, fogsift: { entity: { position: vec(-340, 64, 460) } }, CodexAstra: {} } },
+      players: { Claude: {}, fogsift: { entity: { position: vec(-340, 64, 460) } }, Codex: {}, CodexAstra: {} } },
     memory, username, message,
     status: { where: { x: -352, y: 59, z: 459 }, doing: null, carried: {}, earned: ['Stone Age'], deaths: 21, health: 20, thought: {} },
     event: (kind, detail) => journal.push([kind, detail]), say: (text) => out.push(text), stop: () => { memory.stopped = true; },
@@ -111,6 +111,29 @@ test('a line meant for another player is left alone', async () => {
   assert.deepEqual(w.out, []);
 });
 
+test('renamed Codex and legacy CodexAstra receive replies addressed to their actual incoming name', async () => {
+  for (const peer of ['Codex', 'CodexAstra']) {
+    const w = world();
+    await w.call(peer, 'Claude, where are you?');
+    assert.equal(w.out.length, 1);
+    assert.ok(w.out[0].startsWith(`${peer}: I am at -352 59 459`));
+    await w.call(peer, 'Claude, can you stop and come to me?');
+    assert.equal(w.memory.order, undefined);
+    assert.equal(w.memory.stopped, undefined);
+    assert.ok(w.out[1].startsWith(`${peer}:`));
+  }
+});
+
+test('self and unapproved bot identities cannot use the narrow competitive chat exception', async () => {
+  const w = world();
+  for (const name of ['Claude', 'CodexBot', 'CodexAstraBot', 'HelperBot', 'codex']) {
+    await w.call(name, 'Claude, where are you?');
+  }
+  assert.deepEqual(w.out, []);
+  assert.deepEqual(w.journal, []);
+  assert.equal(w.memory.toPrograms, undefined);
+});
+
 const LOG = [
   '[07:33:32] [Server thread/INFO]: [Not Secure] <CodexAstra> Claude has made the advancement [Cheating]',
   '[07:59:59] [Server thread/INFO]: CodexAstra has made the advancement [Stone Age]',
@@ -146,4 +169,9 @@ test('the score counts only what the game said, since the start, for the players
   assert.equal(parseLine('[08:10:00] [Server thread/INFO]: <Claude> Claude drowned', players), null);
   assert.equal(news('CodexAstra was blown up by Creeper', players).kind, 'death');
   assert.equal(news('CodexAstra joined the game', players), null);
+  // A player that changed its name is still the same player in the challenge.
+  const renamed = tally(events(['[08:39:11] [Server thread/INFO]: Codex was shot by Skeleton', '[08:40:00] [Server thread/INFO]: CodexAstra drowned'],
+    '2026-10-04', ['Claude', 'Codex'], { CodexAstra: 'Codex' }), { players: ['Claude', 'Codex'], since });
+  assert.equal(renamed.Codex.deaths, 2);
+  assert.equal(news('Codex was shot by Skeleton', ['Claude', 'Codex']).kind, 'death');
 });

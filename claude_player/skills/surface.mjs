@@ -7,13 +7,15 @@ export default async function surface({ bot, api, memory, note }) {
   const top = home ? home.y : 66;
   const startY = bot.entity.position.y;
   let stalled = 0;
+  let why = '';
   for (let leg = 0; leg < 12 && bot.entity.position.y < top - 2 && stalled < 2; leg++) {
     api.check();
     const from = bot.entity.position.y;
     const to = Math.min(top, Math.floor(from) + 10);
-    await api.walk(new api.goals.GoalY(to), 100000, `climbing from ${Math.round(from)} to ${to}`).catch((error) => {
-      if (/reflex|asked to stop|died|out of time/.test(error.message)) throw error;
+    await api.walk(new api.goals.GoalY(to), 100000, `climbing from ${Math.round(from)} to ${to}`, true).catch((error) => {
+      if (/reflex|asked|died|out of time/.test(error.message)) throw error;
       note(error.message);
+      why = `: ${error.message}`;
     });
     stalled = bot.entity.position.y - from < 3 ? stalled + 1 : 0;
   }
@@ -22,5 +24,6 @@ export default async function surface({ bot, api, memory, note }) {
   }
   const climbed = Math.round(bot.entity.position.y - startY);
   const up = api.exposed() || bot.entity.position.y >= top - 2;
-  return { ok: up || climbed >= 8, note: `climbed ${climbed} blocks to ${Math.round(bot.entity.position.y)}, ${api.exposed() ? 'under the sky' : 'still under ground'}` };
+  const ok = up || climbed >= 8;
+  return { ok, note: `climbed ${climbed} blocks to ${Math.round(bot.entity.position.y)}, ${api.exposed() ? 'under the sky' : 'still under ground'}${ok ? '' : why}` };
 }

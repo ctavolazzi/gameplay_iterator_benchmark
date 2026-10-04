@@ -7,7 +7,7 @@ export default async function goTo({ bot, api }, { x, y, z, range = 3 }) {
     const far = Math.hypot(x - here.x, z - here.z);
     if (far <= 40) break;
     const k = 32 / far;
-    await api.walk(new api.goals.GoalNearXZ(here.x + (x - here.x) * k, here.z + (z - here.z) * k, 4), 45000, 'walking a leg of the way')
+    await api.walk(new api.goals.GoalNearXZ(here.x + (x - here.x) * k, here.z + (z - here.z) * k, 4), 45000, 'walking a leg of the way', true)
       .catch((error) => { if (/reflex|asked|died|out of time/.test(error.message)) throw error; });
     if (bot.entity.position.distanceTo(here) < 4) return { ok: false, note: `stuck ${Math.round(far)} blocks short` };
   }
