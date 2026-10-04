@@ -26,7 +26,9 @@ const DROPS = {
 const SPOTS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [-2, 0], [0, 2], [0, -2]];
 const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const GROUND = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|stone|andesite|diorite|granite|deepslate|tuff|clay|mud|sandstone|terracotta|calcite|moss_block|cobblestone)$/;
-const FILLER = /^(dirt|cobblestone|cobbled_deepslate|stone|netherrack|andesite|diorite|granite|tuff|.*_planks)$/;
+// What a gap is closed with. Not planks: planks are on the list of built things that are never
+// dug through, and a doorway closed with them shut the player in its own base (turn 8).
+const FILLER = /^(dirt|cobblestone|cobbled_deepslate|stone|netherrack|andesite|diorite|granite|tuff)$/;
 // What a player has built or put down, mine or anyone's: never dug through. Turn 4: the
 // morning after its first night in bed the journal shows "gained ladder 1" on the way to
 // some stone. Someone had put a ladder there.

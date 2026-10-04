@@ -67,6 +67,7 @@ async function serve(gamePort, startAuto) {
   let lastSkill = null;
   let lastProblem = null;
   let stalls = 0;          // walks in a row that went nowhere
+  let lastReconnect = 0;
   const reflexState = { holdUntil: 0 };
 
   const carried = () => {
@@ -230,9 +231,13 @@ async function serve(gamePort, startAuto) {
       // player stood still for a whole game day: paths were found in 10 ms and nothing walked
       // them. A fresh connection moved at once. Three walks in a row that go nowhere, and the
       // connection is dropped; the reconnect below brings it back.
-      const wentNowhere = !row.ok && row.moved === 0 && /took too long|moved 0 blocks|Took to long/.test(row.note ?? '');
+      // Only a walk that timed out counts. "No path" is the pathfinder saying there is no
+      // way, which is true when the player has shut itself in: on its first day this fired 5
+      // times in 12 minutes for that, and a new connection changes nothing about a wall.
+      const wentNowhere = !row.ok && row.moved === 0 && /took too long/.test(row.note ?? '') && !/No path/.test(row.note ?? '');
       stalls = wentNowhere ? stalls + 1 : row.moved > 0 ? 0 : stalls;
-      if (stalls >= 3) {
+      if (stalls >= 3 && Date.now() - lastReconnect > 600000) {
+        lastReconnect = Date.now();
         stalls = 0;
         event('reconnect', { why: 'three walks in a row went nowhere', where: where() });
         bot.quit();

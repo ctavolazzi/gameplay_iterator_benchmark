@@ -5,8 +5,9 @@ export default async function explore({ bot, api }, { direction = 'north', block
   const step = DIRECTIONS[direction];
   if (!step) return { ok: false, note: `no direction called ${direction}` };
   const from = bot.entity.position.clone();
+  let why = '';
   await api.walk(new api.goals.GoalNearXZ(from.x + step[0] * blocks, from.z + step[1] * blocks, 3), 20000 + blocks * 1000, `walking ${direction}`)
-    .catch((error) => { if (/reflex|asked to stop|died/.test(error.message)) throw error; });
+    .catch((error) => { if (/reflex|asked to stop|died/.test(error.message)) throw error; why = `: ${error.message}`; });
   const moved = Math.round(bot.entity.position.distanceTo(from));
-  return { ok: moved >= Math.min(3, blocks), note: `moved ${moved} blocks ${direction}` };
+  return { ok: moved >= Math.min(3, blocks), note: `moved ${moved} blocks ${direction}${moved < 3 ? why : ''}` };
 }

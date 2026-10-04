@@ -86,11 +86,16 @@ shelter"; that was already 4 when it was written.)
 
 | 7, continued (to 03:20) | After the commit of turn 7: one more drowning and the eight deaths in 131 s (see Deaths), and the changes listed there. Also: a spider in daylight is no longer backed away from; the sleep skill uses the player's own bed and closes the doorway and the roof first; a way down from a treetop (by the trunk, or by a drop it can take). Another session changed the world at CT's request at 02:58: one sleeper now ends the night for everyone, players glow, and deaths are announced with their place. | The cascade's last death was 03:05:13; the sprint change went in about half a minute later, and no hit was taken in the 45 s after it. That is not proof it works: the sun came up 2 minutes later. Then the player stood at -365 71 460 for the 9 minutes of the next day and did nothing. The pathfinder found a 9-move path from there in 10 ms; holding forward for 1.5 s moved the body 0.12 blocks. Not explained: the game's data gives leaf litter no collision shape (checked), and digging down into the night hole worked. It missed the dusk it was meant to sleep at. |
 
+| 8 (03:54) | Read 26 minutes alone (03:27 to 03:53): 101 steps, 62 failed, no deaths, nothing earned. Changed: gaps are no longer closed with planks; `leave_base` opens the doorway from inside whatever it was closed with, and the brain uses it by day; the stall watchdog counts only walks that timed out, at most once in 10 minutes; `explore` says why it did not move. | The good part first: it slept in its bed at dusk twice (03:38:31 at game time 15358, 03:49:42 at 13290), "closed 2 gaps before bed", and was up at time 0 both times: one sleeper ends the night, so both nights were skipped. `take_back` ran 3 times in those 26 minutes, where it had run 175 times in 55 before `leaves()`. The bad part: one of the 2 gaps was closed with birch planks, planks are never dug through, and from 03:39 it was shut in its base for 14 minutes: "No path to the goal!" and the watchdog reconnecting 5 times to no purpose. After the change: "opened 2 blocks of the doorway" at 03:56:23, then a chicken hunted and cooked. |
+
 Settled at 03:24, as far as it goes: the player's process was restarted and the first walk
 worked (`goto` into the base, 13 blocks, where the walk to the bed had just timed out after
 60 s). So the fault was in the old connection's state after eight respawns in 131 s, not in
 the world. What exactly was wrong in it is not known. `player.mjs` now drops the connection
-after three walks in a row that go nowhere, and reconnects. That has not been seen to fire.
+after three walks in a row that go nowhere, and reconnects. It fired 5 times the same hour, each time for the wrong reason (see turn 8).
+
+Next candidate, from turn 8's journal: hunting. "the chicken got away after 0 hits" 5 times and
+a pig hunt out of time 3 times, against 2 hunts that worked.
 
 Earlier candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
 decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be
@@ -129,6 +134,8 @@ Each one is from the journal, with the turn it came from.
 - Being stopped is a place too. The player was stopped by day on the surface and started again at night in the same spot, in the open (turn 7).
 - A death at night feeds the next one. Woken unarmed beside what killed it, with the bed not holding the spawn point, it died eight times in 131 s (turn 7). The bed is the thing that breaks the chain, so it now comes before everything else at night.
 - A reading can be full and still be wrong about where the air is: one step into a river the breath is full (death 12). Look at the blocks, not the number.
+- Two of my own rules met and shut the player in: "close the doorway before bed" used planks, and "never dig through planks" would not let it out (turn 8). A rule about what may be broken has to know what the player itself puts down.
+- A watchdog needs to know the difference between "cannot" and "did not". It reconnected 5 times for a wall (turn 8).
 - `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
 - What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
 

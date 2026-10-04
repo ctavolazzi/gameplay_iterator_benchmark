@@ -244,6 +244,14 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       memory.nightPass = now + 30000;
       return { skill: 'goto', args: { x: memory.base.x, y: memory.base.y, z: memory.base.z, range: 1 }, why: 'the night is spent in the base', timeout: 90 };
     }],
+    // By day, inside the base with the doorway shut: open it. Nothing else can start from in there.
+    ['out of the base', () => {
+      const b = memory.base;
+      if (!b || world.night) return null;
+      const inside = Math.abs(here.x - 0.5 - b.x) <= 1.6 && Math.abs(here.z - 0.5 - b.z) <= 1.6 && Math.abs(here.y - b.y) <= 1.6;
+      const shut = api.solid(new api.Vec3(b.x + 2, b.y, b.z)) || api.solid(new api.Vec3(b.x + 2, b.y + 1, b.z));
+      return inside && shut ? open({ skill: 'leave_base', args: {}, why: 'the doorway was closed for the night', timeout: 60 }) : null;
+    }],
     ['sword', tool('stone_sword')],
     ['stone pickaxe', tool('stone_pickaxe')],
     ['base', base],
