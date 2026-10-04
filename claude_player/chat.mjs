@@ -213,12 +213,15 @@ export async function heard({ bot, memory, username, message, status, event, say
 
 // What the game itself says, not a player: the count of sleepers, and each player's
 // advancements and deaths. player.mjs passes every such line here.
-export async function overheard({ bot, memory, text, event, say, stop }) {
+export async function overheard({ bot, memory, text, status, event, say, stop }) {
   const now = Date.now();
   // "1/3 players sleeping": someone is in a bed and waiting. This player goes too, without
   // being asked, and says so once a night.
   const sleepers = /^(\d+)\/(\d+) players? sleeping/.exec(text);
-  if (sleepers && Number(sleepers[1]) > 0 && !bot.isSleeping && memory.order?.kind !== 'bed') {
+  // Not while it is getting into its own bed: at 09:03:12 on 2026-10-04 the count it had just
+  // caused itself stopped its own sleep skill, and it said "Going to bed." from its bed.
+  const bedding = status?.doing?.skill === 'sleep' || /sleep|home by dusk/.test(status?.thought?.goal ?? '');
+  if (sleepers && Number(sleepers[1]) > 0 && !bot.isSleeping && !bedding && memory.order?.kind !== 'bed') {
     const answer = toBed({ bot, memory, who: 'the game', stop });
     const night = bot.time?.day ?? 0;
     if (memory.bedSaid !== night) { memory.bedSaid = night; event('sleepers', { text, answer }); say(answer); }

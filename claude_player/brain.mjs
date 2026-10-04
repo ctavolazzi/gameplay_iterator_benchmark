@@ -402,7 +402,17 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     }],
     // A night the others would not sleep through is spent under ground, after diamonds: they
     // are what everything further on is made of, and under ground the night does not matter.
-    ['mining', () => (world.night ? plan('diamond', (have.diamond ?? 0) + 3, world) : null)],
+    // With a person in the game, the night's digging stays where the bed can be reached when
+    // they ask: coal (torches for a bigger base) or iron, neither more than about 45 blocks
+    // under the bed. On 2026-10-04 fogsift asked three times for everyone to sleep while this
+    // player was 113 blocks down after diamonds, and it told him it would stay in reach.
+    ['mining', () => {
+      if (!world.night) return null;
+      const people = Object.keys(bot.players ?? {}).filter((name) => name !== bot.username && !/codex|bot$/i.test(name));
+      if (!people.length || !memory.places?.bed) return plan('diamond', (have.diamond ?? 0) + 3, world);
+      const coal = plan('coal', (have.coal ?? 0) + 8, world);
+      return coal && !coal.stuck ? coal : plan('raw_iron', (have.raw_iron ?? 0) + 3, world);
+    }],
   ];
 
   const stuck = {};

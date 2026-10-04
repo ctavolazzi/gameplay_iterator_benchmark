@@ -177,3 +177,23 @@ test('the score counts only what the game said, since the start, for the players
   assert.equal(renamed.Codex.deaths, 2);
   assert.equal(news('Codex was shot by Skeleton', ['Claude', 'Codex']).kind, 'death');
 });
+
+test('the count of sleepers sends it to bed, but not when it is the one getting into bed', async () => {
+  const { overheard } = await import(process.env.CHAT ?? '../claude_player/chat.mjs');
+  const run = async (status) => {
+    const out = [];
+    const memory = { places: { bed: { x: -352, y: 59, z: 460 } } };
+    await overheard({ bot: { username: 'Claude', isSleeping: false, time: { timeOfDay: 14000, day: 55 }, entity: { position: vec(-352, 59, 459) } },
+      memory, text: '1/2 players sleeping', status, event: () => {}, say: (line) => out.push(line), stop: () => { memory.stopped = true; } });
+    return { out, memory };
+  };
+  const idle = await run({ doing: { skill: 'collect' }, thought: { goal: 'mining' } });
+  assert.equal(idle.memory.order?.kind, 'bed');
+  assert.equal(idle.memory.stopped, true);
+  assert.deepEqual(idle.out, ['Going to bed.']);
+  // 09:03:12 on 2026-10-04: the count was its own doing, and it stopped its own sleep skill.
+  const bedding = await run({ doing: { skill: 'sleep' }, thought: { goal: 'sleep' } });
+  assert.equal(bedding.memory.order, undefined);
+  assert.equal(bedding.memory.stopped, undefined);
+  assert.deepEqual(bedding.out, []);
+});
