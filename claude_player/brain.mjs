@@ -45,6 +45,15 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   memory.explored ??= {};
   for (const [sig, b] of Object.entries(memory.blocked)) if (now - b.until > 30 * 60000) delete memory.blocked[sig];
 
+  // In a treetop (the world's spawn point is one): down by the trunk before anything else.
+  if (/_leaves$/.test(api.nameAt(bot.entity.position.floored().offset(0, -1, 0)) ?? '') && api.heightAboveGround() > 4) {
+    const down = { skill: 'down_from_tree', args: {}, why: `${api.heightAboveGround()} blocks up in a tree`, goal: 'down', timeout: 90 };
+    if (!((memory.blocked?.['down_from_tree:']?.until ?? 0) > now)) {
+      memory.thought = { at: new Date().toISOString(), goal: 'down', step: 'down_from_tree', why: down.why, stuck: {} };
+      return down;
+    }
+  }
+
   // What a person asked for in chat comes first: wait where it is, or come to them.
   if (memory.order && now > memory.order.until) delete memory.order;
   if (memory.order?.kind === 'wait') {
@@ -216,16 +225,25 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['pickaxe', tool('wooden_pickaxe')],
     // CT, 2026-10-03: a race with Codex's player to a base and a night in a bed near the
     // spawn point. The bed is three wool, so sheep come before everything but a pickaxe.
+    // Since 02:58 on 2026-10-04 one sleeper ends the night for everyone in this world (another
+    // session set the game rule at CT's request). So the bed is the best place to be at dusk:
+    // the night is skipped, and the base becomes the place to wake up after a death.
     ['home by dusk', () => {
-      // Only with the bed: going home without one wins nothing.
-      if (memory.spawnBed || !home || !(bedHad || memory.places?.bed) || time < 10300 || time > 14200 || fromHome < 20) return null;
+      if (!home || !memory.places?.bed || time < 10300 || time > 14200 || fromHome < 20 || fromHome > 160) return null;
       memory.nightPass = now + 45000;   // the last stretch may run a little past dark
-      return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be at the base before dark', timeout: 240 };
+      return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be in bed at dusk', timeout: 240 };
     }],
-    ['into the base', () => (memory.base && api.night() && api.exposed() && fromHome < 20
-      ? { skill: 'goto', args: { x: memory.base.x, y: memory.base.y, z: memory.base.z, range: 1 }, why: 'the night is spent in the base', timeout: 90 } : null)],
-    ['sleep', () => (!memory.spawnBed && memory.places?.bed && fromHome < 30 && (bedTime || (time >= 12300 && time < 12541))
-      ? open({ skill: 'sleep', args: {}, why: 'a night in the bed makes the base the place to wake up after a death', timeout: 100 }) : null)],
+    ['sleep', () => {
+      if (!memory.places?.bed || fromHome > 60 || !(bedTime || (time >= 12300 && time < 12541))) return null;
+      // Turn 7: the walk to the bed kept being stopped by the reflex that digs in at night.
+      memory.nightPass = now + 45000;
+      return open({ skill: 'sleep', args: {}, why: 'a night in the bed is a night skipped', timeout: 100 });
+    }],
+    ['into the base', () => {
+      if (!(memory.base && api.night() && api.exposed() && fromHome < 20)) return null;
+      memory.nightPass = now + 30000;
+      return { skill: 'goto', args: { x: memory.base.x, y: memory.base.y, z: memory.base.z, range: 1 }, why: 'the night is spent in the base', timeout: 90 };
+    }],
     ['sword', tool('stone_sword')],
     ['stone pickaxe', tool('stone_pickaxe')],
     ['base', base],

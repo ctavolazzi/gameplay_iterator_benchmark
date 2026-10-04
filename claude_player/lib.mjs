@@ -78,6 +78,8 @@ export function make(bot, signal, memory = {}) {
   // in the middle of the east wall, which is the one way out and is closed again at dusk.
   // (Turn 4: with the brain back on after its first night in bed, its next step was to dig
   // down through its own floor.)
+  // Turn 7: four of twelve deaths were drowning. A path through water now costs six times a path round it.
+  if (movements) movements.liquidCost = 6;
   if (movements) movements.exclusionAreasBreak = memory.base ? [(block) => (inBase(block.position) ? 1000 : 0)] : [];
   function inBase(at) {
     const base = memory.base;
@@ -116,8 +118,11 @@ export function make(bot, signal, memory = {}) {
   const solid = (at) => bot.blockAt(at)?.boundingBox === 'block';
   const matcher = (name) => name === 'log' ? (b) => b.name.endsWith('_log') : (b) => b.name === name;
   const nearest = (name, distance = 32) => bot.findBlock({ matching: matcher(name), maxDistance: distance });
+  // A spider in daylight leaves the player alone. Turn 7: unarmed in the morning, the player
+  // spent minutes "backing away" from one that was only walking about, and nothing else ran.
+  const calm = (e) => e.name === 'spider' && !night();
   const nearestHostile = (distance = 16) => bot.nearestEntity((e) =>
-    isHostile(e) && e.position.distanceTo(bot.entity.position) <= distance);
+    isHostile(e) && !calm(e) && e.position.distanceTo(bot.entity.position) <= distance);
   const others = () => Object.values(bot.players).filter((p) => p.entity && p.username !== bot.username).map((p) => p.entity.position);
   // How close to another player something may be dug: 12 blocks from a person, 3 from a
   // program's player. Turn 4: Codex's player stood by the base, every stone within 12 blocks
@@ -185,6 +190,87 @@ export function make(bot, signal, memory = {}) {
 
   const nextToLava = (at) => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
     .some(([dx, dy, dz]) => nameAt(at.offset(dx, dy, dz)) === 'lava');
+  const wetAt = (at) => /water|bubble_column|kelp|seagrass/.test(nameAt(at) ?? '');
+  // Stone on a river bed is still stone to a search through the rock: death 12 was 8 stone
+  // for a furnace, dug under water. Nothing with water on any side, or two blocks over it, is gone for.
+  const nextToWater = (at) => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [0, 2, 0]]
+    .some(([dx, dy, dz]) => wetAt(at.offset(dx, dy, dz)));
+
+  // The nearest place to be with the head in air: on something solid, or afloat at the surface.
+  // The first version of the way out remembered "the last place with a full breath", and a
+  // place one step into a river has a full breath too: it walked there and drowned (death 12).
+  function airNear(radius = 10) {
+    const feet = bot.entity.position.floored();
+    let best = null;
+    for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -3; dy <= 8; dy++) {
+      const at = feet.offset(dx, dy, dz);
+      if (solid(at) || solid(at.offset(0, 1, 0)) || wetAt(at.offset(0, 1, 0)) || /lava/.test(nameAt(at) ?? '')) continue;
+      const below = at.offset(0, -1, 0);
+      if (!solid(below) && !wetAt(at)) continue;
+      const cost = Math.abs(dx) + Math.abs(dz) + Math.abs(dy) * 0.7;
+      if (!best || cost < best.cost) best = { at, cost };
+    }
+    return best?.at ?? null;
+  }
+
+  // How far it is down to real ground from where the player stands (leaves and logs are not ground).
+  function heightAboveGround() {
+    const feet = bot.entity.position.floored();
+    for (let down = 1; down < 40; down++) {
+      const block = bot.blockAt(feet.offset(0, -down, 0));
+      if (block && block.boundingBox === 'block' && !/_leaves$|_log$/.test(block.name)) return down - 1;
+    }
+    return 40;
+  }
+
+  // Down out of a treetop by the trunk: stand on the top log and dig the trunk away from under
+  // the feet, one log at a time. The world's spawn point is a treetop 11 blocks up; the
+  // pathfinder spent 2 minutes there after death 12 and moved 2 blocks.
+  async function downFromTree() {
+    const from = bot.entity.position;
+    const trunk = bot.findBlocks({ matching: (b) => b.name.endsWith('_log'), maxDistance: 8, count: 256 })
+      .filter((at) => at.y < from.y && trunkHeight(at) !== null && Math.hypot(at.x + 0.5 - from.x, at.z + 0.5 - from.z) < 6)
+      .sort((a, b) => b.y - a.y || a.distanceTo(from) - b.distanceTo(from))[0];
+    if (!trunk) {
+      // No trunk under these leaves (the canopy of a big tree, its trunk somewhere else): let the
+      // pathfinder drop further than it normally may, when the fall is one the player can take.
+      // A fall costs its height less 3; from here that was 7 of 20 when it happened by accident.
+      const height = heightAboveGround();
+      if (height > 14 || bot.health - Math.max(0, height - 3) < 6) return { ok: false, error: `no trunk to go down by, and ${height} blocks is too far to drop at ${Math.round(bot.health)} health` };
+      const usual = movements.maxDropDown;
+      movements.maxDropDown = height + 1;
+      try {
+        await walk(new goals.GoalY(Math.floor(from.y) - height), 25000, 'dropping out of the tree');
+      } catch (error) {
+        check();
+      } finally {
+        movements.maxDropDown = usual;
+      }
+      await settle();
+      const left = heightAboveGround();
+      return left <= 1 ? { ok: true, logs: 0 } : { ok: false, error: `no trunk to go down by; tried the drop and am still ${left} blocks up` };
+    }
+    await walk(new goals.GoalNear(trunk.x, trunk.y + 1, trunk.z, 0), 20000, 'getting onto the trunk').catch(() => {});
+    let logs = 0;
+    for (let i = 0; i < 40; i++) {
+      check();
+      const feet = bot.entity.position.floored();
+      const under = bot.blockAt(feet.offset(0, -1, 0));
+      if (!under || !/_leaves$|_log$/.test(under.name)) break;
+      if (under.name.endsWith('_leaves') && !solid(feet.offset(0, -2, 0)) && !solid(feet.offset(0, -3, 0)) && !solid(feet.offset(0, -4, 0))) {
+        return { ok: false, error: `a drop of more than 3 under the leaves at ${feet.x} ${feet.y} ${feet.z}` };
+      }
+      const tool = bot.pathfinder.bestHarvestTool(under);
+      if (tool) await bot.equip(tool, 'hand');
+      await within(bot.dig(under, true), 15000, 'digging down the trunk');
+      if (under.name.endsWith('_log')) logs += 1;
+      await sleep(350);
+      await settle();
+    }
+    await pickUp(4, 3);
+    const left = heightAboveGround();
+    return left <= 1 ? { ok: true, logs } : { ok: false, error: `still ${left} blocks up` };
+  }
 
   // The nearest block of a kind worth going for: a trunk a person can reach from the ground,
   // nothing touching lava, nothing within 12 blocks of another player (the world is shared).
@@ -198,7 +284,7 @@ export function make(bot, signal, memory = {}) {
       .sort((a, b) => a.distanceTo(from) - b.distanceTo(from));
     for (const at of found) {
       if (isLog) { const height = trunkHeight(at); if (height === null || height > 3) continue; }
-      else if (nextToLava(at)) continue;
+      else if (nextToLava(at) || nextToWater(at)) continue;
       return at;
     }
     return null;
@@ -535,6 +621,37 @@ export function make(bot, signal, memory = {}) {
     return solid(feet.offset(0, 2, 0)) && SIDES.every(([dx, dz]) => solid(feet.offset(dx, 0, dz)) && solid(feet.offset(dx, 1, dz)));
   }
 
+  // Under a roof with walls on at least three sides: a dead end under ground. Nothing can
+  // shoot into it and only one thing at a time can walk into it.
+  function snug() {
+    const feet = bot.entity.position.floored();
+    if (!solid(feet.offset(0, 2, 0))) return false;
+    return SIDES.filter(([dx, dz]) => solid(feet.offset(dx, 0, dz)) && solid(feet.offset(dx, 1, dz))).length >= 3;
+  }
+
+  // With nothing to close a hole with (the usual state after a death): two blocks into the
+  // side of the hole instead. Turn 7: empty-handed after death 12 it stood in a half-dug pit
+  // for five minutes of night and was shot from 18 health to 10.
+  async function burrow() {
+    const feet = bot.entity.position.floored();
+    for (const [dx, dz] of SIDES) {
+      const cells = [feet.offset(dx, 1, dz), feet.offset(dx, 0, dz), feet.offset(2 * dx, 1, dz * 2), feet.offset(2 * dx, 0, 2 * dz)];
+      if (!cells.every((cell) => solid(cell) && !nextToLava(cell) && !nextToWater(cell))) continue;
+      if (!solid(feet.offset(2 * dx, 2, 2 * dz)) || !solid(feet.offset(2 * dx, -1, 2 * dz))) continue;
+      for (const cell of cells) {
+        check();
+        if (nearestHostile(3)) return { ok: false, error: 'a monster came within 3 blocks while burrowing' };
+        const block = bot.blockAt(cell);
+        const tool = bot.pathfinder.bestHarvestTool(block);
+        if (tool) await bot.equip(tool, 'hand');
+        await within(bot.dig(block, true), 30000, 'burrowing sideways');
+      }
+      await walk(new goals.GoalBlock(feet.x + 2 * dx, feet.y, feet.z + 2 * dz), 6000, 'stepping into the burrow').catch(() => {});
+      return snug() ? { ok: true, note: 'two blocks into the side of the hole' } : { ok: false, error: 'the burrow is not closed in' };
+    }
+    return { ok: false, error: 'no side of the hole to burrow into' };
+  }
+
   // A place to stand with three blocks of real ground under it, away from monsters and
   // other players. The world's spawn point is in a treetop, where a hole cannot be dug.
   function groundSpot() {
@@ -581,7 +698,7 @@ export function make(bot, signal, memory = {}) {
     if (start.y - feet.y < 2) return { ok: false, error: `only got ${start.y - feet.y} blocks down` };
     if (!solid(cap)) {
       const filler = find(FILLER);
-      if (!filler) return { ok: false, error: 'nothing carried to close the hole with' };
+      if (!filler) return burrow();
       await bot.equip(filler, 'hand');
       for (const [dx, dz] of SIDES) {
         const wall = bot.blockAt(cap.offset(dx, 0, dz));
@@ -647,10 +764,14 @@ export function make(bot, signal, memory = {}) {
   }
 
   // Get into the nearest bed at the first moment the game allows it, then get up again.
-  async function sleepInBed() {
-    const bed = bot.findBlock({ matching: (b) => b.name.endsWith('_bed'), maxDistance: 24 });
+  // The player's own bed when it remembers one, and it is still there; else the nearest.
+  // (Turn 7: another player's bed stood 23 blocks from the base and was found first.)
+  async function sleepInBed(beforeBed = null) {
+    const own = memory.places?.bed && bot.blockAt(new Vec3(memory.places.bed.x, memory.places.bed.y, memory.places.bed.z));
+    const bed = own?.name?.endsWith('_bed') ? own : bot.findBlock({ matching: (b) => b.name.endsWith('_bed'), maxDistance: 24 });
     if (!bed) return { ok: false, error: 'no bed within 24 blocks' };
-    await walk(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), 40000, 'walking to the bed');
+    await walk(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), 60000, 'walking to the bed');
+    if (beforeBed) await beforeBed();
     const deadline = Date.now() + 70000;
     while (bot.time.timeOfDay > 11000 && bot.time.timeOfDay < 12541 && Date.now() < deadline) { check(); await sleep(50); }
     const time = bot.time.timeOfDay;
@@ -659,12 +780,15 @@ export function make(bot, signal, memory = {}) {
     } catch (error) {
       return { ok: false, error: `${error.message} (time ${time})` };
     }
+    // Getting up does nothing on this version of the game, so wait for the morning: with one
+    // sleeper enough to end the night it comes in a few seconds, and otherwise the skill's
+    // own time limit ends the wait.
     await sleep(3000);
-    await bot.wake().catch(() => {});
-    return { ok: true, at: round(bed.position), time };
+    for (let waited = 0; waited < 60 && bot.isSleeping; waited++) { check(); await sleep(500); }
+    return { ok: true, at: round(bed.position), time, upAt: bot.time.timeOfDay };
   }
 
-  return { inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
 }

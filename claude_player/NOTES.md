@@ -48,7 +48,7 @@ chat or in the server log, so nothing here can see it. It is not counted.
 
 ## Deaths
 
-Eleven, from the server's logs. (An early commit said "3 deaths, all before the night
+Twenty, from the server's logs. (An early commit said "3 deaths, all before the night
 shelter"; that was already 4 when it was written.)
 
 | Time | The server's words | What the journal shows | What was changed |
@@ -64,6 +64,9 @@ shelter"; that was already 4 when it was written.)
 | 18:46:18 | drowned | the breath reflex held the queue, so the walk out never started | the reflex walks to the last air and never holds |
 | 02:39:06 (next day) | slain by Zombie | 19 s after logging in, at night, on the surface where it had been stopped by day. A zombie was 5 blocks off; the reflex began digging in, and was hit 16 times in 15 s while it dug, in full iron armour with an iron sword in the pack. Lost: 3 diamond pickaxes, the iron pickaxe and sword, the bucket, all the armour. | a hole is begun only with nothing hostile within 8 blocks, and given up if something comes within 4; only a sword or an axe counts as armed |
 | 02:43:14 | blown up by Creeper | in the base, with `brave` set by hand so that it would fetch what it had dropped: `brave` also stopped it backing away from the creeper. The blast took the bed out and left the room with 11 gaps to close (the roof shaft and the doorway were open before it); it woke at the world's spawn point. What it had dropped was never fetched. | a creeper is backed away from whatever is set; the base is checked against the world and repaired |
+
+| 02:50:48 | drowned | digging 8 stone for a furnace from a river bed. The breath reflex walked it to "the last place with a full breath", which was one step into the river. | the nearest place with the head in air is looked for in the world; nothing beside water is gone for; a path through water costs six times a path round it |
+| 03:03:02 to 03:05:13 | slain by Spider once and by Zombie seven times: eight deaths in 131 s | it woke unarmed at night at the world's spawn point, next to what had just killed it, each time. Backing away by pathfinder did not get away: about 7 hits each time, mostly standing. The bed did not hold the spawn point, because it had been knocked out and put back and not slept in again. | running away is now plain sprinting, with no path to think about; with nothing to close a hole with, the shelter is two blocks into the side of the hole; the bed comes first at night |
 
 ## Turns
 
@@ -81,7 +84,13 @@ shelter"; that was already 4 when it was written.)
 
 | 7 (02:37 the next day) | CT: "continue playing the game". Started from a Terminal window (`open claude_player/play.command`), 6 hours after it was stopped. Two deaths in the first 5 minutes (see Deaths), the second one my own doing. Changed: the two reflex rules above; `digIn` gives up when a monster is within 4 blocks; the brain checks the bed and the table it remembers against the world, puts a carried bed back before anything else, and sleeps in it again to make the base the place it wakes after a death (`spawnBed`). | At dawn, with nothing queued by hand: 3 logs, a table, home, `build_base` ("closed 4 gaps, 7 still open ... bed: nothing under it to stand it on"), a pickaxe and stone, `build_base` again ("closed 7 gaps, 0 still open, put down crafting_table, white_bed") 35 s later, then a sword, a stone pickaxe and two pigs. The reflex changes have not met a monster yet. |
 
-Next turn's candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
+| 7, continued (to 03:20) | After the commit of turn 7: one more drowning and the eight deaths in 131 s (see Deaths), and the changes listed there. Also: a spider in daylight is no longer backed away from; the sleep skill uses the player's own bed and closes the doorway and the roof first; a way down from a treetop (by the trunk, or by a drop it can take). Another session changed the world at CT's request at 02:58: one sleeper now ends the night for everyone, players glow, and deaths are announced with their place. | The cascade's last death was 03:05:13; the sprint change went in about half a minute later, and no hit was taken in the 45 s after it. That is not proof it works: the sun came up 2 minutes later. Then the player stood at -365 71 460 for the 9 minutes of the next day and did nothing. The pathfinder found a 9-move path from there in 10 ms; holding forward for 1.5 s moved the body 0.12 blocks. Not explained: the game's data gives leaf litter no collision shape (checked), and digging down into the night hole worked. It missed the dusk it was meant to sleep at. |
+
+Next turn's candidate, the first thing to settle: why the body did not move. `body_check` and
+`path_check` are the two skills that show it. If it happens again, restart the player's process
+and see whether a fresh connection moves.
+
+Earlier candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
 decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be
 dug from where the player stands, with no walk.
 
@@ -116,6 +125,8 @@ Each one is from the journal, with the turn it came from.
 - What the reflexes do inside one tick, nothing else can interrupt. The dig-in took 15 s on a busy machine and the player was hit all the way through it with a sword in its pack (turn 7).
 - An override set by hand to get past one danger switches off the care for others. `brave` was meant for zombies on the way to a fetch; it ignored a creeper (turn 7). Overrides now leave creepers alone.
 - Being stopped is a place too. The player was stopped by day on the surface and started again at night in the same spot, in the open (turn 7).
+- A death at night feeds the next one. Woken unarmed beside what killed it, with the bed not holding the spawn point, it died eight times in 131 s (turn 7). The bed is the thing that breaks the chain, so it now comes before everything else at night.
+- A reading can be full and still be wrong about where the air is: one step into a river the breath is full (death 12). Look at the blocks, not the number.
 - `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
 - What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
 
@@ -124,6 +135,9 @@ Each one is from the journal, with the turn it came from.
 - The base's roof was open after the second trip in; a way in that can be closed (a door or a hatch) is not built.
 - Magma under water is not recognised.
 - All the diamond and iron gear was lost at 02:39:06 and has to be made again.
+- Why the body would not move at -365 71 460 for a whole game day.
+- The base has no way in that stays: every entry is dug, every exit leaves a hole. A staircase and a door.
+- Nine advancements, the same nine as at 19:34 the day before. Nothing was earned in turn 7.
 - `build_base` says "put down crafting_table" when the table was already there.
 - `brave` and `nightPass` in memory were set by hand during the race. The brain sets `nightPass` in two places; nothing sets `brave` unless the bed is in the pack.
 - Diamond armour is not put on over iron: `wear` only fills an empty place.

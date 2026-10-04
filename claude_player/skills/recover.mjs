@@ -10,7 +10,7 @@ export default async function recover({ bot, api, note }, { where }) {
   let air = bot.entity.position.clone();
   const wet = () => /water|bubble_column/.test(bot.blockAt(bot.entity.position.offset(0, 1.6, 0))?.name ?? '');
   const breath = () => (wet() ? bot.oxygenLevel ?? 20 : 20);
-  const crumbs = setInterval(() => { if (breath() >= 20 && bot.entity.onGround) air = bot.entity.position.clone(); }, 200);
+  const crumbs = setInterval(() => { if (!wet() && !api.wetAt(bot.entity.position) && bot.entity.onGround) air = bot.entity.position.clone(); }, 200);
   const toAir = async () => {
     await api.walk(new api.goals.GoalNear(air.x, air.y, air.z, 1), 15000, 'getting back to air').catch(() => {});
     for (let waited = 0; waited < 40 && breath() < 18; waited++) await api.sleep(250);

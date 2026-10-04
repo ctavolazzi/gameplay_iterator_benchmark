@@ -44,7 +44,7 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
   // cave, while the skill went on digging. Under 10 of 20 breath: drop everything and swim up.
   const breath = bot.oxygenLevel ?? 20;
   // The last place it stood with a full breath is the way out of any water.
-  if (breath >= 20 && bot.entity.onGround) state.airSpot = me.clone();
+  if (breath >= 20 && bot.entity.onGround && !api.wetAt(me.offset(0, 1.6, 0)) && !api.wetAt(me)) state.airSpot = me.clone();
   // After a death by drowning the breath reading stays low until the game corrects it: only
   // believe it with the head actually under water.
   const headIn = bot.blockAt(me.offset(0, 1.6, 0))?.name ?? '';
@@ -59,10 +59,14 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
     // holding the queue kept the walk out from starting. Walk to the remembered air instead.
     state.holdUntil = now + 2000;
     state.fight = null;
-    if (state.airSpot && now - (state.airGoalAt ?? 0) > 3000) {
+    // Death 12: the remembered place was one step into the river. The nearest place with the
+    // head in air is now looked for in the world; the remembered one is the second choice.
+    if (now - (state.airGoalAt ?? 0) > 3000) {
       state.airGoalAt = now;
-      bot.pathfinder.setGoal(new api.goals.GoalNear(state.airSpot.x, state.airSpot.y, state.airSpot.z, 1));
-    } else if (!state.airSpot) bot.setControlState('jump', true);
+      const air = api.airNear(10) ?? state.airSpot;
+      if (air) bot.pathfinder.setGoal(new api.goals.GoalNear(air.x, air.y, air.z, 0));
+      else bot.setControlState('jump', true);
+    }
     return;
   }
   if (state.surfacing) {
@@ -74,7 +78,7 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
 
   const weapon = WEAPONS.map((kind) => api.find(kind)).find(Boolean) ?? null;
   const creeper = foe?.name === 'creeper';
-  const enclosed = api.enclosed();
+  const enclosed = api.enclosed() || api.snug();
   const night = api.night();
 
   // In the closed hole nothing outside matters. Underground at night the brain may still mine.
@@ -98,20 +102,43 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
   // And only a sword or an axe counts as something to fight with: a pickaxe does not.
   const brave = (memory.brave ?? 0) > now;
   const armed = !!(api.find(/_sword$/) ?? api.find(/_axe$/));
-  const mustFlee = foe && ((creeper && distance < 6) || (!brave && !armed && distance < 7));
+  const mustFlee = foe && ((creeper && distance < 6) || (!brave && !armed && distance < 10));
   if (mustFlee) {
     if (busy) interrupt(`backing away from a ${foe.name}`);
     if (!state.fleeing || now > state.fleeing) event('flee', { foe: foe.name, distance: +distance.toFixed(1), health });
-    state.fleeing = now + 4000;
-    state.holdUntil = now + 5000;
+    state.fleeing = now + 6000;
+    state.holdUntil = now + 7000;
     state.fight = null;
   }
   if (state.fleeing && now < state.fleeing) {
-    if (foe) bot.pathfinder.setGoal(new api.goals.GoalInvert(new api.goals.GoalFollow(foe, 16)), true);
+    // Turn 7: backing away by pathfinder did not get away. On this machine the path is still
+    // being thought about while the zombie arrives: eight deaths in 131 s, about 7 hits each, mostly standing.
+    // Running needs no path: face away, hold forward, sprint and jump. A zombie walks at less
+    // than half a sprint. If a second of running has not moved it, it turns a third of the way round.
+    if (foe) {
+      bot.pathfinder.setGoal(null);
+      const away = me.minus(foe.position);
+      away.y = 0;
+      const length = Math.hypot(away.x, away.z) || 1;
+      let [dx, dz] = [away.x / length, away.z / length];
+      const stuck = state.fleeFrom && now - state.fleeFrom.at > 1000 && me.distanceTo(state.fleeFrom.where) < 1;
+      if (!state.fleeFrom || now - state.fleeFrom.at > 1000) state.fleeFrom = { at: now, where: me.clone() };
+      if (stuck) state.fleeTurn = (state.fleeTurn ?? 0) + Math.PI / 3;
+      const turn = state.fleeTurn ?? 0;
+      [dx, dz] = [dx * Math.cos(turn) - dz * Math.sin(turn), dx * Math.sin(turn) + dz * Math.cos(turn)];
+      await bot.lookAt(me.offset(dx * 10, 1.6, dz * 10), true);
+      bot.setControlState('forward', true);
+      bot.setControlState('sprint', true);
+      bot.setControlState('jump', true);
+      if (distance > 24) state.fleeing = now;   // far enough: stop running, and let the night rule dig in
+    }
     return;
   }
   if (state.fleeing) {
     state.fleeing = 0;
+    state.fleeFrom = null;
+    state.fleeTurn = 0;
+    bot.clearControlStates();
     if (!busy) bot.pathfinder.setGoal(null);
   }
 
