@@ -93,8 +93,12 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
   // Version 5 (turn 3): never a fist fight. With nothing to fight with it took 5 hits from one
   // zombie at dawn and landed nothing that mattered. No weapon means keeping away.
   // memory.brave: with nothing to lose and something to fetch, keep going past what would be run from.
+  // Turn 7: brave was set by hand for a fetch and it stopped the player backing away from a
+  // creeper, which blew up it, its bed and part of its base. A creeper is always backed away from.
+  // And only a sword or an axe counts as something to fight with: a pickaxe does not.
   const brave = (memory.brave ?? 0) > now;
-  const mustFlee = foe && !brave && ((creeper && distance < 6) || (!weapon && distance < 7));
+  const armed = !!(api.find(/_sword$/) ?? api.find(/_axe$/));
+  const mustFlee = foe && ((creeper && distance < 6) || (!brave && !armed && distance < 7));
   if (mustFlee) {
     if (busy) interrupt(`backing away from a ${foe.name}`);
     if (!state.fleeing || now > state.fleeing) event('flee', { foe: foe.name, distance: +distance.toFixed(1), health });
@@ -113,7 +117,11 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
 
   // Night under the open sky: into the ground, unless something is already in reach and there is
   // a weapon to answer it with. A failed try waits longer before the next.
-  const beingHit = foe && !creeper && distance < 3.2 && weapon;
+  // Turn 7: it logged in at night with a zombie 5 blocks off, began digging in, and was hit 16
+  // times while it dug, in full iron armour with an iron sword in its pack: the dig-in runs to
+  // its end inside one tick, and nothing else is looked at meanwhile. A hole is now begun only
+  // with nothing hostile within 8 blocks, and is given up if something comes within 4.
+  const beingHit = foe && !creeper && distance < 8;
   // memory.nightPass: the brain may ask for a short while in the open after dark, to finish a walk home.
   if (night && api.exposed() && !beingHit && now > (state.nextDigIn ?? 0) && now > (memory.nightPass ?? 0)) {
     state.fight = null;
@@ -131,7 +139,7 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
 
   // Fight what comes close and can be seen. The skill stops; nothing new starts until it is over.
   let target = state.fight ? bot.entities[state.fight.id] : null;
-  if (!target && weapon && foe && !creeper && (distance < 2.5 || (distance < 5 && await api.canSee(foe)))) target = foe;
+  if (!target && armed && foe && !creeper && (distance < 2.5 || (distance < 6 && await api.canSee(foe)))) target = foe;
   if (target) {
     if (!state.fight) {
       if (busy) interrupt(`fighting a ${target.name}`);

@@ -569,6 +569,7 @@ export function make(bot, signal, memory = {}) {
     for (let depth = 0; depth < 3; depth++) {
       const under = bot.blockAt(bot.entity.position.floored().offset(0, -1, 0));
       if (under?.boundingBox !== 'block' || nextToLava(under.position)) break;
+      if (nearestHostile(4)) return { ok: false, error: 'a monster came within 4 blocks while digging in' };
       const tool = bot.pathfinder.bestHarvestTool(under);
       if (tool) await bot.equip(tool, 'hand');
       await within(bot.dig(under, true), 15000, 'digging in');

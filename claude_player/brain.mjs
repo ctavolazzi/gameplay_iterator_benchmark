@@ -128,8 +128,27 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   const slept = earned.includes('Sweet Dreams');
   memory.slept = slept;
 
+  // The base is kept up. Turn 7: a creeper blew the bed out of the base, the next death put the
+  // player back at the world's spawn point in a treetop, and nothing put the bed back because
+  // every base goal stopped at "has slept once". What is remembered is checked against the world.
+  for (const thing of ['bed', 'crafting_table']) {
+    const at = memory.places?.[thing];
+    const name = at && fromHome < 40 ? api.nameAt(new api.Vec3(at.x, at.y, at.z)) : null;
+    if (name && !(thing === 'bed' ? name.endsWith('_bed') : name === thing)) {
+      delete memory.places[thing];
+      if (thing === 'bed') memory.spawnBed = false;
+    }
+  }
+  // After a death, waking up far from the bed means the bed no longer holds the spawn point.
+  if (memory.lastDeath && memory.respawnSeen !== memory.lastDeath.at) {
+    memory.respawnSeen = memory.lastDeath.at;
+    const at = memory.places?.bed;
+    if (!at || Math.hypot(here.x - at.x, here.y - at.y, here.z - at.z) > 8) memory.spawnBed = false;
+  }
+  const bedTime = time >= 12541 && time < 23300;
+
   function bed() {
-    if (bedHad || memory.places?.bed || slept) return null;
+    if (bedHad || memory.places?.bed) return null;
     // The flock by the spawn point was three white sheep and a black one. The game's recipe
     // book (probed live) makes white wool from black wool and white dye, and white dye from a
     // lily of the valley or bone meal. So the third fleece need not be a fourth sheep.
@@ -161,7 +180,7 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   }
 
   function base() {
-    if (!home || slept) return null;
+    if (!home) return null;
     // The first base is the room, the crafting table and the bed. The furnace follows the race.
     const tableIn = memory.base && memory.places?.crafting_table?.y === memory.base.y;
     const furnished = memory.base && tableIn;
@@ -192,26 +211,25 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   const goals = [
     ['wear', () => (api.unworn().length ? { skill: 'wear', args: {}, why: 'armour carried and not worn', timeout: 20 } : null)],
     ['recover', recover],
-    // The race comes before tools: a bed is wool and planks, and neither needs a pickaxe.
-    ...(slept ? [] : [['bed', bed]]),
+    // During the race the bed came before tools. It is won; a bed that is carried still goes back first.
+    ...(bedHad && !memory.places?.bed ? [['base', base]] : []),
     ['pickaxe', tool('wooden_pickaxe')],
     // CT, 2026-10-03: a race with Codex's player to a base and a night in a bed near the
     // spawn point. The bed is three wool, so sheep come before everything but a pickaxe.
     ['home by dusk', () => {
       // Only with the bed: going home without one wins nothing.
-      if (slept || !home || !(bedHad || memory.places?.bed) || time < 10300 || time > 14200 || fromHome < 20) return null;
+      if (memory.spawnBed || !home || !(bedHad || memory.places?.bed) || time < 10300 || time > 14200 || fromHome < 20) return null;
       memory.nightPass = now + 45000;   // the last stretch may run a little past dark
       return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be at the base before dark', timeout: 240 };
     }],
     ['into the base', () => (memory.base && api.night() && api.exposed() && fromHome < 20
       ? { skill: 'goto', args: { x: memory.base.x, y: memory.base.y, z: memory.base.z, range: 1 }, why: 'the night is spent in the base', timeout: 90 } : null)],
-    ['sleep', () => (!slept && memory.places?.bed && time >= 12300 && time < 23300
-      ? open({ skill: 'sleep', args: {}, why: 'Sweet Dreams, in my bed at my base', timeout: 100 }) : null)],
-    // The room first: it is the part that has never been built, and wants time left to fix it.
-    ['base', base],
-    ['bed', bed],
+    ['sleep', () => (!memory.spawnBed && memory.places?.bed && fromHome < 30 && (bedTime || (time >= 12300 && time < 12541))
+      ? open({ skill: 'sleep', args: {}, why: 'a night in the bed makes the base the place to wake up after a death', timeout: 100 }) : null)],
     ['sword', tool('stone_sword')],
     ['stone pickaxe', tool('stone_pickaxe')],
+    ['base', base],
+    ['bed', bed],
     ['food', food],
     ['A Seedy Place', seedy],
     ['iron pickaxe', tool('iron_pickaxe')],
@@ -289,6 +307,7 @@ export async function learn({ row, memory, fresh }) {
   }
   if (row.skill === 'recover') delete memory.lastDeath;
   if (row.skill === 'come') delete memory.order;
+  if (row.skill === 'sleep' && row.ok) memory.spawnBed = true;
   // A table that could not be taken back is let go of, so it is not tried for ever.
   if (row.skill === 'take_back' && !row.ok && row.args?.at) {
     const at = row.args.at;

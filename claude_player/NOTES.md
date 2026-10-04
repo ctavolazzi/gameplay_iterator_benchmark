@@ -48,8 +48,8 @@ chat or in the server log, so nothing here can see it. It is not counted.
 
 ## Deaths
 
-Nine, from the server's log. The commit before this one said "3 deaths, all before the
-night shelter"; that was already 4 when it was written.
+Eleven, from the server's logs. (An early commit said "3 deaths, all before the night
+shelter"; that was already 4 when it was written.)
 
 | Time | The server's words | What the journal shows | What was changed |
 | --- | --- | --- | --- |
@@ -62,6 +62,8 @@ night shelter"; that was already 4 when it was written.
 | 18:43:18 | drowned | had the wool back, and stayed in the water because nothing told it to leave | `recover` now ends where it last had air |
 | 18:43:46 | slain by Zombie | digging down into the base with a zombie on it | |
 | 18:46:18 | drowned | the breath reflex held the queue, so the walk out never started | the reflex walks to the last air and never holds |
+| 02:39:06 (next day) | slain by Zombie | 19 s after logging in, at night, on the surface where it had been stopped by day. A zombie was 5 blocks off; the reflex began digging in, and was hit 16 times in 15 s while it dug, in full iron armour with an iron sword in the pack. Lost: 3 diamond pickaxes, the iron pickaxe and sword, the bucket, all the armour. | a hole is begun only with nothing hostile within 8 blocks, and given up if something comes within 4; only a sword or an axe counts as armed |
+| 02:43:14 | blown up by Creeper | in the base, with `brave` set by hand so that it would fetch what it had dropped: `brave` also stopped it backing away from the creeper. The blast took the bed out and left the room with 11 gaps to close (the roof shaft and the doorway were open before it); it woke at the world's spawn point. What it had dropped was never fetched. | a creeper is backed away from whatever is set; the base is checked against the world and repaired |
 
 ## Turns
 
@@ -76,6 +78,8 @@ night shelter"; that was already 4 when it was written.
 | 5 (19:15) | First turn run from the loop. `smelt` looks at what is already in the furnace: output taken, input of another kind taken, fuel that is there used. | Before: the morning's first 4 smelts worked, then 2 in a row failed with "destination full" (planks brought to a furnace still holding coal), and the shield and the iron sword were stuck behind them. After: the next 2 smelts worked; shield made and held at 19:17:39, iron sword at 19:18:16. Since the morning 44 steps chosen by the brain, 5 failed. Deaths still 9, the last at 18:46:18. |
 
 | 6 (20:15) | No player to watch: its process was a background task of the chat session, and that has a 2-hour limit. It was stopped at 20:14:49 and not started again. Read the 55 minutes it had played alone, and changed three things from them: a table or furnace is picked up only before a step that really leaves (`leaves()` in planner.mjs, with a test); one diamond pickaxe is asked for, not three; goals beyond the first list (diamond sword and armour). | The hour alone, from the journal and the server's logs: 404 steps, 11 failed. Diamonds! at 19:34:29. Iron leggings, helmet, boots and a bucket. No deaths (still 9); 12 hits taken, 23.1 health in all, 7 fights. It came through a server restart by itself (kicked 19:28:11, back 19:29:26). `take_back` worked 174 times of 175, and that was the problem: 169 of them put the same thing down again within 3 steps; picking up and putting down took 593 of 2037 s, 29%. 9 diamonds became 3 diamond pickaxes at 20:09:01. Then it had no goal left and stood still for 5 minutes 48 seconds. None of the three changes has run in the game. |
+
+| 7 (02:37 the next day) | CT: "continue playing the game". Started from a Terminal window (`open claude_player/play.command`), 6 hours after it was stopped. Two deaths in the first 5 minutes (see Deaths), the second one my own doing. Changed: the two reflex rules above; `digIn` gives up when a monster is within 4 blocks; the brain checks the bed and the table it remembers against the world, puts a carried bed back before anything else, and sleeps in it again to make the base the place it wakes after a death (`spawnBed`). | At dawn, with nothing queued by hand: 3 logs, a table, home, `build_base` ("closed 4 gaps, 7 still open ... bed: nothing under it to stand it on"), a pickaxe and stone, `build_base` again ("closed 7 gaps, 0 still open, put down crafting_table, white_bed") 35 s later, then a sword, a stone pickaxe and two pigs. The reflex changes have not met a monster yet. |
 
 Next turn's candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
 decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be
@@ -109,6 +113,9 @@ Each one is from the journal, with the turn it came from.
 - A good tip applied without a limit is a new fault. "Take it with you" has to mean "when you leave", and "leave" has to be measured (turn 6).
 - Tools wear out. At 19:54 it had none left of the three pickaxes it had carried, with no death in between, and the climb to the surface (wood for new handles) failed 5 times that hour (turn 6). A stock of logs before going down is not kept yet.
 - The player's process must not belong to a chat session: it was stopped by the session's 2-hour limit while playing well. `play.command` starts it from a Terminal window (turn 6).
+- What the reflexes do inside one tick, nothing else can interrupt. The dig-in took 15 s on a busy machine and the player was hit all the way through it with a sword in its pack (turn 7).
+- An override set by hand to get past one danger switches off the care for others. `brave` was meant for zombies on the way to a fetch; it ignored a creeper (turn 7). Overrides now leave creepers alone.
+- Being stopped is a place too. The player was stopped by day on the surface and started again at night in the same spot, in the open (turn 7).
 - `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
 - What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
 
@@ -116,6 +123,8 @@ Each one is from the journal, with the turn it came from.
 
 - The base's roof was open after the second trip in; a way in that can be closed (a door or a hatch) is not built.
 - Magma under water is not recognised.
+- All the diamond and iron gear was lost at 02:39:06 and has to be made again.
+- `build_base` says "put down crafting_table" when the table was already there.
 - `brave` and `nightPass` in memory were set by hand during the race. The brain sets `nightPass` in two places; nothing sets `brave` unless the bed is in the pack.
 - Diamond armour is not put on over iron: `wear` only fills an empty place.
 - Nothing yet reads `notes.jsonl` without the session: `watch_notes.mjs` wakes the session when CT says something the player cannot answer.
