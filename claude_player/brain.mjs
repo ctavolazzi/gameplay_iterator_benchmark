@@ -276,8 +276,13 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     // near it: it must not be the one holding the night up, and a night slept in the bed also
     // makes the base the place to wake up after a death.
     ['home by dusk', () => {
-      if (!home || !memory.places?.bed || time < 10300 || time > 14200 || fromHome < 20 || fromHome > 160) return null;
-      if (!world.exposed && Math.abs(here.y - memory.places.bed.y) > 20) return null;   // deep under ground: stay there
+      if (!home || !memory.places?.bed || time < 10300 || time > 14200 || fromHome > 160) return null;
+      if (now < (memory.noBedUntil ?? 0)) return null;
+      // From deep in a mine too: with every player needed in a bed, a player that stays down
+      // its mine holds the night up for everyone. Up in legs first, then the walk.
+      const below = memory.places.bed.y - here.y;
+      if (below > 16) return open({ skill: 'surface', args: {}, why: 'up from the mine to be in bed at dusk', timeout: 600, pass: { night: true } });
+      if (fromHome < 20) return null;
       // The last stretch may run past dark: the pass lasts as long as this one walk.
       return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be in bed at dusk', timeout: 120, pass: { night: true } };
     }],
