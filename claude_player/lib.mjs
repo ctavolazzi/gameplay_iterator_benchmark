@@ -34,6 +34,9 @@ const FILLER = /^(dirt|cobblestone|cobbled_deepslate|stone|netherrack|andesite|d
 // some stone. Someone had put a ladder there.
 const FURNITURE = /^(crafting_table|furnace|chest|barrel|torch|wall_torch|ladder|.*_bed|.*_door|.*_trapdoor|.*_sign|.*_fence|.*_fence_gate|.*_stairs|.*_slab|.*_planks|glass|glass_pane|.*_glass)$/;
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
+// What is not worth a place in the chest or, past a stack of the building stones, in the pack.
+export const JUNK = /^(cobblestone|cobbled_deepslate|stone|tuff|diorite|andesite|granite|gravel|dirt|leaf_litter|feather|rotten_flesh|egg|pumpkin_seeds|flint|white_banner|ladder|.*_sapling)$/;
+const KEPT_ON_THE_PLAYER = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed|crafting_table|furnace|shield)$/;
 const WORN_SLOTS = [5, 6, 7, 8, 45];
 
 const round = (v) => ({ x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z) });
@@ -67,7 +70,13 @@ export function make(bot, signal, memory = {}) {
     bot.pathfinder.thinkTimeout = 15000;
     // At night a step under the open sky costs a great deal, so a path stays underground when it can.
     if (bot.pathfinder.movements) {
-      bot.pathfinder.movements.exclusionAreasStep = night() && !memory.pass?.night ? [(block) => ((block.skyLight ?? 0) >= 8 ? 40 : 0)] : [];
+      const rules = night() && !memory.pass?.night ? [(block) => ((block.skyLight ?? 0) >= 8 ? 40 : 0)] : [];
+      // Thrown-away stone is picked up again by walking over it (turn 15: 264 blocks dropped
+      // and 256 of them back in the pack a minute later). For the 5 minutes until it is gone,
+      // a step within 2 blocks of where it lies costs enough to go round.
+      const heaps = (memory.junk ?? []).filter((heap) => heap.until > Date.now());
+      if (heaps.length) rules.push((block) => (block.position && heaps.some((h) => Math.abs(h.x - block.position.x) <= 2 && Math.abs(h.z - block.position.z) <= 2 && Math.abs(h.y - block.position.y) <= 2) ? 25 : 0));
+      bot.pathfinder.movements.exclusionAreasStep = rules;
     }
   }
   // The pathfinder digs through what is in its way. Not through the base's furniture.
@@ -327,7 +336,9 @@ export function make(bot, signal, memory = {}) {
   async function pickUp(radius = 8, tries = 4) {
     for (let i = 0; i < tries; i++) {
       check();
-      const drop = bot.nearestEntity((e) => e.name === 'item' && e.position.distanceTo(bot.entity.position) < radius);
+      // Not what was thrown away on purpose.
+      const drop = bot.nearestEntity((e) => e.name === 'item' && e.position.distanceTo(bot.entity.position) < radius
+        && !JUNK.test(e.getDroppedItem?.()?.name ?? ''));
       if (!drop) return;
       await walk(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 0), 6000, 'reaching a dropped item').catch(() => {});
       await sleep(300);
@@ -579,37 +590,69 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, hits, gained: diffCarried(before, carried()).gained };
   }
 
-  // Put what is not needed on a trip into the chest in the base, so that a death does not take
-  // it. Kept on the player: the best pickaxe and sword, one spare pickaxe, food, sticks, wood,
-  // torches, buckets, a table, a furnace, a stack of cobblestone. Everything else goes in.
+  // What is worth a place in the chest, and what is not. Turn 15: the chest was filled with
+  // stone of six kinds by the first version of this, and then 54 diamonds could not be put in:
+  // "nothing to put in", ten times in five seconds, with the diamonds still on the player.
+
+  // Where junk that was just thrown away has come to rest, remembered for the 5 minutes it lies there.
+  function markJunk() {
+    const now = Date.now();
+    const heaps = Object.values(bot.entities)
+      .filter((e) => e.name === 'item' && e.position.distanceTo(bot.entity.position) < 10 && JUNK.test(e.getDroppedItem?.()?.name ?? ''))
+      .map((e) => ({ ...round(e.position), until: now + 300000 }));
+    memory.junk = [...(memory.junk ?? []).filter((heap) => heap.until > now), ...heaps].slice(-40);
+    return heaps.length;
+  }
+
+  // What the player carries that belongs in the chest: [name, count]. Not junk, not what a
+  // trip needs, and one of the best pickaxe, the best sword and an iron pickaxe stay in hand.
+  function spares() {
+    const keepOne = new Set([bestOf('_pickaxe')?.name, bestOf('_sword')?.name, bestOf('_axe')?.name, 'iron_pickaxe'].filter(Boolean));
+    const kept = {};
+    const out = {};
+    for (const item of bot.inventory.items()) {
+      if (JUNK.test(item.name) || KEPT_ON_THE_PLAYER.test(item.name)) continue;
+      let count = item.count;
+      if (keepOne.has(item.name) && !kept[item.name]) { kept[item.name] = true; count -= 1; }
+      if (count > 0) out[item.name] = (out[item.name] ?? 0) + count;
+    }
+    return Object.entries(out);
+  }
+
+  // Put the spares into the chest in the base, so that a death does not take them. Junk that
+  // an earlier version put in there is taken out first, as much as the pack has room for; it
+  // leaves with the player and is thrown away outside. Says so when the chest is full.
   async function stash(chestAt) {
     const block = bot.blockAt(new Vec3(chestAt.x, chestAt.y, chestAt.z));
     if (block?.name !== 'chest') return { ok: false, error: 'no chest there' };
     await walk(new goals.GoalNear(chestAt.x, chestAt.y, chestAt.z, 2), 30000, 'walking to the chest');
-    const keepOne = new Set([bestOf('_pickaxe')?.name, bestOf('_sword')?.name, bestOf('_axe')?.name, 'iron_pickaxe', 'crafting_table', 'furnace', 'shield'].filter(Boolean));
-    const keepAll = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed)$/;
     const chest = await within(bot.openContainer(block), 8000, 'opening the chest');
     const put = {};
+    const taken = {};
+    let full = null;
     try {
-      const seen = {};
-      for (const item of bot.inventory.items()) {
+      for (const item of chest.containerItems()) {
         check();
-        let count = item.count;
-        if (keepAll.test(item.name)) continue;
-        if (keepOne.has(item.name) && !seen[item.name]) { seen[item.name] = true; count -= 1; }
-        if (item.name === 'cobblestone') { const kept = seen.cobble ?? 0; const keep = Math.max(0, Math.min(count, 64 - kept)); seen.cobble = kept + keep; count -= keep; }
-        if (count <= 0) continue;
+        if (!JUNK.test(item.name) || bot.inventory.emptySlotCount() <= 3) continue;
         try {
-          await within(chest.deposit(item.type, null, count), 5000, `putting ${item.name} in the chest`);
-          put[item.name] = (put[item.name] ?? 0) + count;
+          await within(chest.withdraw(item.type, null, item.count), 5000, `taking ${item.name} out of the chest`);
+          taken[item.name] = (taken[item.name] ?? 0) + item.count;
+        } catch (error) { /* the pack has no room for it: it stays for the next visit */ }
+      }
+      for (const [name, count] of spares()) {
+        check();
+        try {
+          await within(chest.deposit(bot.registry.itemsByName[name].id, null, count), 5000, `putting ${name} in the chest`);
+          put[name] = count;
         } catch (error) {
-          if (/full|no space/i.test(error.message)) break;
+          full = `${name} would not go in: ${error.message}`;
+          break;
         }
       }
     } finally {
       chest.close();
     }
-    return { ok: true, put };
+    return full ? { ok: false, error: full, put, taken } : { ok: true, put, taken };
   }
 
   // Feed two animals that stand near each other, so that they breed. The proof that it worked
@@ -926,7 +969,7 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: asks.length, gaveUp: true, up };
   }
 
-  return { roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
 }

@@ -265,6 +265,13 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const atChest = memory.baseHas?.chest && b && Math.abs(here.x - b.x) <= 3 && Math.abs(here.z - b.z) <= 3 && Math.abs(here.y - b.y) <= 2;
       return atChest ? null : open({ skill: 'drop_junk', args: {}, why: 'the pack is full', timeout: 30 });
     }],
+    // Junk taken out of the chest leaves the base with the player and is thrown away outside.
+    ['junk out', () => {
+      const b = memory.base;
+      const nearBase = b && Math.abs(here.x - b.x) <= 6 && Math.abs(here.z - b.z) <= 6 && Math.abs(here.y - b.y) <= 6;
+      const junk = ['cobbled_deepslate', 'tuff', 'diorite', 'andesite', 'granite', 'gravel'].reduce((sum, name) => sum + (have[name] ?? 0), 0);
+      return !nearBase && junk >= 128 ? open({ skill: 'drop_junk', args: {}, why: `${junk} blocks of stone that are no use`, timeout: 30 }) : null;
+    }],
     ['recover', recover],
     // During the race the bed came before tools. It is won; a bed that is carried still goes back first.
     ...(bedHad && !memory.places?.bed ? [['base', base]] : []),
@@ -315,8 +322,20 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const b = memory.base;
       if (!chest || !b) return null;
       const inside = Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2;
-      const spare = Object.entries(have).some(([name, n]) => /^(diamond|raw_iron|iron_ingot|ominous_bottle|white_banner|andesite|diorite|granite|tuff|cobbled_deepslate|gravel|leaf_litter|feather|egg)$/.test(name) || (name === 'cobblestone' && n > 96));
-      return inside && spare ? open({ skill: 'stash', args: { at: chest }, why: 'spares go in the chest before the next trip', timeout: 60 }) : null;
+      // What counts as a spare is lib.mjs's to say, so that this goal and the skill agree: they
+      // did not, and the goal asked ten times for a stash that had nothing it would put in.
+      return inside && api.spares().length ? open({ skill: 'stash', args: { at: chest }, why: 'spares go in the chest before the next trip', timeout: 60 }) : null;
+    }],
+    // Diamonds are carried home before more are dug: at 07:15 it had 54 on it, 40 blocks under
+    // ground beside a mineshaft that had already killed it once, and a chest it could not fill.
+    ['bank', () => {
+      const chest = memory.baseHas?.chest;
+      const b = memory.base;
+      if (!chest || !b || (have.diamond ?? 0) < 16 || world.night) return null;
+      if (Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2) return null;
+      const why = `${have.diamond} diamonds to the chest`;
+      if (b.y - here.y > 16) return open({ skill: 'surface', args: {}, why, timeout: 600 });
+      return open({ skill: 'goto', args: { x: b.x, y: b.y, z: b.z, range: 1 }, why, timeout: 300 });
     }],
     ['sword', tool('stone_sword')],
     ['stone pickaxe', tool('stone_pickaxe')],

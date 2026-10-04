@@ -23,7 +23,10 @@ export default async function dropJunk({ bot, api }) {
     dropped[item.name] = (dropped[item.name] ?? 0) + count;
     await api.sleep(150);
   }
+  // Where it landed is remembered, so that the next walk goes round it and does not pick it up again.
+  await api.sleep(1200);
+  const heaps = api.markJunk();
   const free = bot.inventory.emptySlotCount();
   const list = Object.entries(dropped).map(([name, n]) => `${n} ${name}`).join(', ');
-  return { ok: free > before, note: list ? `dropped ${list}; ${free} places free`.slice(0, 280) : `nothing to drop; ${free} places free` };
+  return { ok: free > before, note: list ? `dropped ${list}; ${free} places free; ${heaps} heaps marked`.slice(0, 280) : `nothing to drop; ${free} places free` };
 }
