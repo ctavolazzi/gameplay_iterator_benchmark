@@ -13,7 +13,8 @@ export const HOSTILE = /^(zombie|husk|drowned|zombie_villager|skeleton|stray|bog
 export const isHostile = (entity) => !!entity && (entity.type === 'hostile' || HOSTILE.test(entity.name ?? ''));
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Monsters come out at about 13000 and the sun burns them from about 23500.
-export const isNight = (time) => time >= 12700 && time < 23600;
+// Turn 3: out at 23600 it met a zombie that had not burned yet. The night now ends at 200.
+export const isNight = (time) => time >= 13000 || time < 200;
 
 // What a dug block leaves behind, where that is not the block itself.
 const DROPS = {
@@ -26,7 +27,10 @@ const SPOTS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1,
 const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const GROUND = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|stone|andesite|diorite|granite|deepslate|tuff|clay|mud|sandstone|terracotta|calcite|moss_block|cobblestone)$/;
 const FILLER = /^(dirt|cobblestone|cobbled_deepslate|stone|netherrack|andesite|diorite|granite|tuff|.*_planks)$/;
-const FURNITURE = /^(crafting_table|furnace|chest|torch|wall_torch|.*_bed|.*_door|.*_sign)$/;
+// What a player has built or put down, mine or anyone's: never dug through. Turn 4: the
+// morning after its first night in bed the journal shows "gained ladder 1" on the way to
+// some stone. Someone had put a ladder there.
+const FURNITURE = /^(crafting_table|furnace|chest|barrel|torch|wall_torch|ladder|.*_bed|.*_door|.*_trapdoor|.*_sign|.*_fence|.*_fence_gate|.*_stairs|.*_slab|.*_planks|glass|glass_pane|.*_glass)$/;
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 const WORN_SLOTS = [5, 6, 7, 8, 45];
 
@@ -44,7 +48,7 @@ export function observe(bot) {
     if (block) blocks.push({ name: block.name, d: Math.round(block.position.distanceTo(from)), at: round(block.position) });
   }
   const creatures = Object.values(bot.entities)
-    .filter((e) => e !== bot.entity && e.position && !['item', 'arrow', 'experience_orb'].includes(e.name) && e.position.distanceTo(from) <= 40)
+    .filter((e) => e !== bot.entity && e.position && !['item', 'arrow', 'experience_orb'].includes(e.name) && e.position.distanceTo(from) <= 110)
     .map((e) => ({ name: e.username ?? e.name, d: Math.round(e.position.distanceTo(from)), ...(isHostile(e) && { hostile: true }) }))
     .sort((a, b) => a.d - b.d).slice(0, 24);
   return { blocks: blocks.sort((a, b) => a.d - b.d), creatures,
@@ -61,14 +65,26 @@ export function make(bot, signal, memory = {}) {
     bot.pathfinder.thinkTimeout = 15000;
     // At night a step under the open sky costs a great deal, so a path stays underground when it can.
     if (bot.pathfinder.movements) {
-      bot.pathfinder.movements.exclusionAreasStep = night() ? [(block) => ((block.skyLight ?? 0) >= 8 ? 40 : 0)] : [];
+      bot.pathfinder.movements.exclusionAreasStep = night() && !((memory.nightPass ?? 0) > Date.now()) ? [(block) => ((block.skyLight ?? 0) >= 8 ? 40 : 0)] : [];
     }
   }
   // The pathfinder digs through what is in its way. Not through the base's furniture.
   const movements = bot.pathfinder?.movements;
-  if (movements && !movements.furnitureKept) {
+  if (movements && movements.furnitureKept !== FURNITURE.source) {
     for (const block of Object.values(bot.registry.blocksByName)) if (FURNITURE.test(block.name)) movements.blocksCantBreak.add(block.id);
-    movements.furnitureKept = true;
+    movements.furnitureKept = FURNITURE.source;
+  }
+  // The base is not dug through either: its floor, walls and ceiling stay, except the doorway
+  // in the middle of the east wall, which is the one way out and is closed again at dusk.
+  // (Turn 4: with the brain back on after its first night in bed, its next step was to dig
+  // down through its own floor.)
+  if (movements) movements.exclusionAreasBreak = memory.base ? [(block) => (inBase(block.position) ? 1000 : 0)] : [];
+  function inBase(at) {
+    const base = memory.base;
+    if (!base || !at) return false;
+    const [dx, dy, dz] = [at.x - base.x, at.y - base.y, at.z - base.z];
+    if (Math.abs(dx) > 2 || Math.abs(dz) > 2 || dy < -1 || dy > 2) return false;
+    return !(dx === 2 && dz === 0 && (dy === 0 || dy === 1));
   }
   const check = () => { if (signal?.aborted) throw new Error(signal.reason?.message ?? 'stopped'); };
   const within = (promise, ms, what) => new Promise((resolve, reject) => {
@@ -103,6 +119,11 @@ export function make(bot, signal, memory = {}) {
   const nearestHostile = (distance = 16) => bot.nearestEntity((e) =>
     isHostile(e) && e.position.distanceTo(bot.entity.position) <= distance);
   const others = () => Object.values(bot.players).filter((p) => p.entity && p.username !== bot.username).map((p) => p.entity.position);
+  // How close to another player something may be dug: 12 blocks from a person, 3 from a
+  // program's player. Turn 4: Codex's player stood by the base, every stone within 12 blocks
+  // of it was off limits, and the planner went looking for deepslate instead.
+  const crowded = (at) => Object.values(bot.players).some((p) => p.entity && p.username !== bot.username &&
+    p.entity.position.distanceTo(at) < (/codex|bot$/i.test(p.username) ? 3 : 12));
   const same = (a, b) => a.x === b.x && a.y === b.y && a.z === b.z;
 
   // Under the open sky. In a closed hole or a tunnel the sky's light does not reach.
@@ -123,8 +144,27 @@ export function make(bot, signal, memory = {}) {
     for (let i = 0; i < 20 && !bot.entity.onGround; i++) await sleep(100);
   }
 
+  // Turn 4: after its first night it stood on the bed and could not leave: every walk
+  // ended at once with "moved 0 blocks", because the pathfinder cannot start from a bed.
+  async function offTheBed() {
+    const feet = bot.entity.position.floored();
+    if (!nameAt(feet)?.endsWith('_bed')) return;
+    for (const [dx, dz] of [...SIDES, [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      const to = feet.offset(dx, 0, dz);
+      if (solid(to) || solid(to.offset(0, 1, 0)) || nameAt(to)?.endsWith('_bed')) continue;
+      await bot.lookAt(to.offset(0.5, 1.2, 0.5), true);
+      bot.setControlState('forward', true);
+      bot.setControlState('jump', true);
+      await sleep(450);
+      bot.clearControlStates();
+      await sleep(300);
+      if (!nameAt(bot.entity.position.floored())?.endsWith('_bed')) return;
+    }
+  }
+
   async function walk(goal, ms = 45000, what = 'walking') {
     check();
+    await offTheBed();
     try {
       await within(bot.pathfinder.goto(goal), ms, what);
     } catch (error) {
@@ -152,10 +192,9 @@ export function make(bot, signal, memory = {}) {
   // pathfinder digs its way there.
   function reachable(name) {
     const from = bot.entity.position;
-    const keepClear = others();
     const isLog = name === 'log' || name.endsWith('_log');
-    const found = bot.findBlocks({ matching: matcher(name), maxDistance: 48, count: 256 })
-      .filter((at) => !keepClear.some((other) => other.distanceTo(at) < 12))
+    const found = bot.findBlocks({ matching: matcher(name), maxDistance: 48, count: 1024 })
+      .filter((at) => !crowded(at) && !inBase(at))
       .sort((a, b) => a.distanceTo(from) - b.distanceTo(from));
     for (const at of found) {
       if (isLog) { const height = trunkHeight(at); if (height === null || height > 3) continue; }
@@ -169,7 +208,10 @@ export function make(bot, signal, memory = {}) {
   // walk: the pathfinder changes what is in hand while it digs its own way through.
   async function digAt(at, what = 'block') {
     const far = at.distanceTo(bot.entity.position);
-    await walk(new goals.GoalLookAtBlock(at, bot.world, { reach: 4 }), Math.min(240000, 20000 + far * 3000), `walking to the ${what}`);
+    // A flower or a clump of grass has nothing solid to look at: stand next to it instead.
+    const soft = bot.blockAt(at)?.boundingBox === 'empty';
+    const goal = soft ? new goals.GoalNear(at.x, at.y, at.z, 2) : new goals.GoalLookAtBlock(at, bot.world, { reach: 4 });
+    await walk(goal, Math.min(240000, 20000 + far * 3000), `walking to the ${what}`);
     await settle();
     const block = bot.blockAt(at);
     if (!block || block.name === 'air') throw new Error(`the ${what} is gone`);
@@ -240,7 +282,10 @@ export function make(bot, signal, memory = {}) {
   // The nearest crafting table that has not already proved out of reach.
   function tableNear(distance = 32) {
     const from = bot.entity.position;
-    const bad = memory.badTables ?? [];
+    // CT's note in chat, 01:37: walk to a table that is already there. One had been written
+    // off as out of reach after a single failed walk, and a new one made 2 blocks from it.
+    // A table is now written off for two minutes, not for good.
+    const bad = (memory.badTables ?? []).filter((b) => Date.now() - (b.at ?? 0) < 120000);
     return bot.findBlocks({ matching: matcher('crafting_table'), maxDistance: distance, count: 8 })
       .filter((at) => !bad.some((b) => same(b, at)))
       .sort((a, b) => a.distanceTo(from) - b.distanceTo(from))
@@ -264,7 +309,7 @@ export function make(bot, signal, memory = {}) {
           await walk(new goals.GoalNear(table.position.x, table.position.y, table.position.z, 2), 60000, 'walking to the crafting table');
         } catch (error) {
           check();
-          (memory.badTables ??= []).push(round(table.position));
+          (memory.badTables ??= []).push({ ...round(table.position), at: Date.now() });
           return { ok: false, error: `could not reach the crafting table ${Math.round(table.position.distanceTo(bot.entity.position))} blocks away: ${error.message}` };
         }
       }
@@ -381,12 +426,13 @@ export function make(bot, signal, memory = {}) {
   // Chase an animal down, and pick up what it leaves.
   async function hunt(name) {
     const from = bot.entity.position;
-    const target = bot.nearestEntity((e) => e.name === name && e.position.distanceTo(from) < 32);
+    // The game tells the player about animals 100 blocks off (who_is_near, turn 4): go that far for one.
+    const target = bot.nearestEntity((e) => e.name === name && e.position.distanceTo(from) < 110);
     if (!target) return { ok: false, error: `no ${name} in sight` };
     const weapon = find(/_sword$/) ?? find(/_axe$/);
     if (weapon) await bot.equip(weapon, 'hand');
     const before = carried();
-    const deadline = Date.now() + 40000;
+    const deadline = Date.now() + 30000 + target.position.distanceTo(from) * 500;
     let hits = 0;
     let last = target.position.clone();
     bot.pathfinder.setGoal(new goals.GoalFollow(target, 1), true);
@@ -605,7 +651,7 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, at: round(bed.position), time };
   }
 
-  return { placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
 }

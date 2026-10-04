@@ -2,42 +2,106 @@
 
 Started 2026-10-03. World: the local co-op world on `127.0.0.1:25566` (Minecraft 26.1,
 survival, normal difficulty, seed 7040093665601660210), shared with CT (`fogsift`) and
-another session's `CodexBot`. Player name: `Claude`. [LOOP.md](LOOP.md) is the procedure.
+Codex's player (`CodexAstra`). Player name: `Claude`. [LOOP.md](LOOP.md) is the procedure.
+Times below are the server's clock (local); the journal's are UTC, 7 hours ahead.
+
+## The race (CT, in chat with the session, 2026-10-03)
+
+"You're competing with Codex. Try to beat it to building a base and sleeping in your bed
+near the original spawn point."
+
+**Done at 18:55:29**: the server's log says `Claude has made the advancement [Sweet Dreams]`.
+The bed is at -352 59 460, in the base: a room 3 by 3 and 2 high, dug 7 blocks under the
+ground beside the spawn tree, with a crafting table and, since the next morning, a furnace.
+The world's spawn point is about -352 72 464: the bed is 4 blocks from it and 13 below. The player got in at game time 12599, 58 ticks after the game
+first allows it, and stayed in bed until morning. At that moment the server's log held two
+advancements for `CodexAstra` (Monster Hunter, Stone Age) and no Sweet Dreams.
+
+What it took, from the journal: three white sheep. The first flock by the spawn point was
+three white and one black; two fleeces were carried into a flooded cave and lost there three
+times over (see Lessons). The flock that made the bed was found only after the player was
+shown every creature the game had told it about, not only those within 40 blocks: six sheep
+were standing 65 to 88 blocks away.
+
+What the base is not: it is not a building. Nothing stands above ground, and the way in is
+whatever the player digs. A door, a marked entrance and light inside are still to do.
 
 ## Goal ladder
 
-Advancements, in the order they are being tried. Earned means the server's log said so.
+Advancements. Earned means the server's log said so (`grep "Claude has" logs/latest.log`).
 
-| Advancement | Needs | State |
-| --- | --- | --- |
-| Stone Age | cobblestone picked up | earned 2026-10-03 17:34:38 |
-| Getting an Upgrade | a stone pickaxe | earned 2026-10-03 17:34:49 |
-| Acquire Hardware | an iron ingot (furnace, coal, iron ore) | next |
-| Isn't It Iron Pick | an iron pickaxe | next |
-| Suit Up | any iron armour | |
-| Monster Hunter | kill a hostile | |
-| Sweet Dreams | sleep in a bed (3 wool, 3 planks) | |
-| A Seedy Place | plant a seed | |
-| Hot Stuff | a bucket of lava | |
-| Not Today, Thank You | block an arrow with a shield | |
-| Diamonds! | a diamond | |
-| Ice Bucket Challenge | obsidian | |
+| Advancement | State |
+| --- | --- |
+| Stone Age | earned 17:34:38 |
+| Getting an Upgrade | earned 17:34:49 |
+| Monster Hunter | earned 17:38:59 |
+| Acquire Hardware | earned 18:17:20, by the brain alone, under ground at night |
+| Isn't It Iron Pick | earned 18:17:22, the same |
+| Suit Up | earned 18:20:39, the same (lost with everything else 99 seconds later) |
+| Sweet Dreams | earned 18:55:29 |
+| A Seedy Place | earned 19:07:32, by the brain alone the morning after the bed: "got 2 wheat_seeds from 3 clumps of grass", then planted. The first `gather_seeds` got nothing in 150 s; the rewrite, which walks next to each clump, worked first time. |
+| Not Today, Thank You; Hot Stuff; Diamonds!; Ice Bucket Challenge | not started |
 
 The game's first advancement, "Minecraft" (have a crafting table), is not announced in
 chat or in the server log, so nothing here can see it. It is not counted.
+
+## Deaths
+
+Nine, from the server's log. The commit before this one said "3 deaths, all before the
+night shelter"; that was already 4 when it was written.
+
+| Time | The server's words | What the journal shows | What was changed |
+| --- | --- | --- | --- |
+| 17:37:18 | slain by Zombie | 5 hits in 6 s at night with a sword in the pack, then it ran, and a skeleton shot it | reflex 2: stop the skill and fight |
+| 17:39:06 | slain by Zombie | fought with a pickaxe; six zombies within 20 blocks | reflex 3: at dusk dig a hole and close it |
+| 17:43:42 | slain by Zombie | respawned in a treetop, where no hole can be dug | the hole is dug in ground found nearby |
+| 18:22:18 | drowned | 2 health a second for 11 s in a flooded cave while collecting iron ore | a breath reflex (which then needed three more tries) |
+| 18:40:00 | discovered the floor was lava | a magma block under water in another flooded cave | none yet: magma is not looked for |
+| 18:41:58 | shot by Skeleton | on the surface at night, sent back by hand for the wool | |
+| 18:43:18 | drowned | had the wool back, and stayed in the water because nothing told it to leave | `recover` now ends where it last had air |
+| 18:43:46 | slain by Zombie | digging down into the base with a zombie on it | |
+| 18:46:18 | drowned | the breath reflex held the queue, so the walk out never started | the reflex walks to the last air and never holds |
 
 ## Turns
 
 | Turn | Changed | Measured after |
 | --- | --- | --- |
-| 0 (17:32) | First version: player, 6 skills, reflexes. Plan: 4 logs, planks, table, sticks, wooden pickaxe, 3 stone, stone pickaxe. | 4 of 7 steps worked. The wooden pickaxe failed ("Took to long to decide path to goal!" walking to a table 14 blocks off), and the two steps after it failed because of that. |
-| 0b (17:34) | `lib.craft` reports an unreachable table and `craft` then puts the carried one down; path thinking time 5 s to 15 s; the "cannot craft" message names the nearest recipe, not the first. | Retry of the 3 failed steps: all 3 worked. Stone Age and Getting an Upgrade, both in the server log. 0 damage. |
+| 0 (17:32) | First version: player, 6 skills, reflexes, plans queued by hand. | 4 of 7 steps worked; after three fixes, 3 of 3. Stone Age, Getting an Upgrade. |
+| 1 (17:36) | Reflexes 2 and 3 (fight; night shelter). | First night shelter: dug in at 17:43:48, out at dawn with 20 health. Three deaths before it worked. |
+| 2 (17:50) | The player decides for itself: `planner.mjs`, `brain.mjs`, memory, reconnect. | In its first day and night alone: tools, a hunted chicken cooked in a furnace, iron mined and smelted, iron pickaxe, iron chestplate worn. 3 advancements with no step queued by hand. |
+| 3 (18:10) | The race: bed goal, `build_base`, `sleep`, `goto`; chat replies (`chat.mjs`). | Room dug in 41 s ("dug 16, closed 1 gaps, 0 still open"). Chat answered where it was and what it was doing. |
+| 4 (18:22 to 18:56) | By hand, under the clock: breath reflex (four versions), `recover` (two), sight widened from 40 to 110 blocks, bed ahead of tools. | Sweet Dreams at 18:55:29. 6 deaths in this stretch, 3 of them in one cave. |
+
+## Notes from the player
+
+CT's notes in the game's chat, and what was done with each. `chat.mjs` writes them to
+`data/claude_player/notes.jsonl`; the session decides.
+
+| When | Note | Decision |
+| --- | --- | --- |
+| 18:37:56 | "if there's already a crafting table near you you can probably just walk to it you probably don't need to make a whole new one" | Right, and the journal agrees: a second table was placed 2 blocks from one that a single failed walk had written off. Changed: a table is written off for two minutes, not for good; the planner walks to a table the player already has within 40 blocks before making one. The player had answered this note with a greeting ("Hello fogsift. I am digging for iron_ore ..."); notes are now recognised before greetings. Seen working the next morning (19:08:35): it walked 20 blocks back to its own table to craft a furnace. |
+
+| 19:10 (to the session) | "you can also totally destroy crafting tables and furnaces and take them with you after you set them down" | Right: it saves a log or eight cobblestone each time and the walk back. Changed: `place` remembers which tables and furnaces are the player's own; before a step that walks away, the brain takes one within 10 blocks along (`take_back`). Never the base's, never anyone else's. Not yet seen working in the game. |
 
 ## Lessons
 
 Each one is from the journal, with the turn it came from.
 
-- A plan's steps depend on each other. A failed pickaxe made the next two steps fail for a
-  reason that was not theirs. Dependent steps carry `"stopOnFail": true` (turn 0).
-- A crafting table in sight is not a crafting table in reach. Carry one and put it down (turn 0).
-- This machine is busy (load average over 5): the pathfinder needs more than its default 5 s to think (turn 0).
+- A plan's steps depend on each other; a failed step makes the next ones fail for a reason that is not theirs (turn 0). The planner now picks one step at a time.
+- A crafting table in sight is not a crafting table in reach, and one failed walk does not make it out of reach either (turns 0 and 4, and CT's note).
+- This machine is busy: the pathfinder needs more than its default 5 s to think (turn 0), and the pack hears of a craft a moment late (turn 2: "crafted oak_planks but carry no more of it").
+- Night in the open is what kills, not any one monster. A closed hole 3 deep costs nothing and works (turn 1).
+- A test that plays the planner from empty hands to an iron pickaxe caught a real fault before the game did: deepslate chosen over stone in sight (turn 2). The live recipe book then showed a second one the test's made-up book could not: bamboo planks listed ahead of oak.
+- Water is the second killer. Swimming up is not always the way out; the place it last had air is (turn 4). And a breath reading stays low after a drowning death until the game corrects it.
+- A fetch has to end with getting out. Twice the things were picked up and lost again on the spot (turn 4).
+- The game tells the player about creatures 100 blocks away. Looking only 40 blocks out, it walked 250 blocks west while six sheep stood 65 to 88 blocks from home (turn 4).
+- The other player being near must not stop the work: with Codex's player by the base, every stone within 12 blocks of it was off limits and the planner went for deepslate under the base floor (turn 4). People keep 12 blocks; programs' players 3.
+- `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
+- What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
+
+## Open
+
+- The base's roof was open after the second trip in; a way in that can be closed (a door or a hatch) is not built.
+- Magma under water is not recognised.
+- `brave` and `nightPass` in memory were set by hand during the race. The brain sets `nightPass` in two places; nothing sets `brave` unless the bed is in the pack.
+- Nothing yet reads `notes.jsonl` without the session: `watch_notes.mjs` wakes the session when CT says something the player cannot answer.

@@ -40,6 +40,38 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
     }
   }
 
+  // Air first. Two of the first four deaths were drowning: 2 health a second, in a flooded
+  // cave, while the skill went on digging. Under 10 of 20 breath: drop everything and swim up.
+  const breath = bot.oxygenLevel ?? 20;
+  // The last place it stood with a full breath is the way out of any water.
+  if (breath >= 20 && bot.entity.onGround) state.airSpot = me.clone();
+  // After a death by drowning the breath reading stays low until the game corrects it: only
+  // believe it with the head actually under water.
+  const headIn = bot.blockAt(me.offset(0, 1.6, 0))?.name ?? '';
+  const underWater = /water|bubble_column|kelp|seagrass/.test(headIn);
+  if (breath < 8 && underWater) {
+    if (!state.surfacing) {
+      state.surfacing = now;
+      if (busy) interrupt('out of breath');
+      event('surfacing', { breath, health, where: api.round(me), airSpot: state.airSpot ? api.round(state.airSpot) : null });
+    }
+    // Turn 4: swimming straight up did not get it out (it drowned holding the jump key), and
+    // holding the queue kept the walk out from starting. Walk to the remembered air instead.
+    state.holdUntil = now + 2000;
+    state.fight = null;
+    if (state.airSpot && now - (state.airGoalAt ?? 0) > 3000) {
+      state.airGoalAt = now;
+      bot.pathfinder.setGoal(new api.goals.GoalNear(state.airSpot.x, state.airSpot.y, state.airSpot.z, 1));
+    } else if (!state.airSpot) bot.setControlState('jump', true);
+    return;
+  }
+  if (state.surfacing) {
+    if (breath < 16 && underWater) { state.holdUntil = now + 1500; return; }
+    event('breathing', { breath, health, seconds: Math.round((now - state.surfacing) / 1000), where: api.round(me) });
+    state.surfacing = 0;
+    bot.setControlState('jump', false);
+  }
+
   const weapon = WEAPONS.map((kind) => api.find(kind)).find(Boolean) ?? null;
   const creeper = foe?.name === 'creeper';
   const enclosed = api.enclosed();
@@ -58,7 +90,11 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
   if (!night) state.sheltered = false;
 
   // Back away: from a creeper, or from anything when badly hurt with nothing to fight with.
-  const mustFlee = foe && ((creeper && distance < 6) || (!weapon && bot.health <= 8 && distance < 8));
+  // Version 5 (turn 3): never a fist fight. With nothing to fight with it took 5 hits from one
+  // zombie at dawn and landed nothing that mattered. No weapon means keeping away.
+  // memory.brave: with nothing to lose and something to fetch, keep going past what would be run from.
+  const brave = (memory.brave ?? 0) > now;
+  const mustFlee = foe && !brave && ((creeper && distance < 6) || (!weapon && distance < 7));
   if (mustFlee) {
     if (busy) interrupt(`backing away from a ${foe.name}`);
     if (!state.fleeing || now > state.fleeing) event('flee', { foe: foe.name, distance: +distance.toFixed(1), health });
@@ -78,7 +114,8 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
   // Night under the open sky: into the ground, unless something is already in reach and there is
   // a weapon to answer it with. A failed try waits longer before the next.
   const beingHit = foe && !creeper && distance < 3.2 && weapon;
-  if (night && api.exposed() && !beingHit && now > (state.nextDigIn ?? 0)) {
+  // memory.nightPass: the brain may ask for a short while in the open after dark, to finish a walk home.
+  if (night && api.exposed() && !beingHit && now > (state.nextDigIn ?? 0) && now > (memory.nightPass ?? 0)) {
     state.fight = null;
     if (busy) interrupt('night: digging in');
     state.holdUntil = now + 20000;
@@ -94,7 +131,7 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
 
   // Fight what comes close and can be seen. The skill stops; nothing new starts until it is over.
   let target = state.fight ? bot.entities[state.fight.id] : null;
-  if (!target && foe && !creeper && (distance < 2.5 || (distance < 5 && await api.canSee(foe)))) target = foe;
+  if (!target && weapon && foe && !creeper && (distance < 2.5 || (distance < 5 && await api.canSee(foe)))) target = foe;
   if (target) {
     if (!state.fight) {
       if (busy) interrupt(`fighting a ${target.name}`);

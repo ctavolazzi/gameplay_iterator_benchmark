@@ -57,7 +57,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   }
 
   // Hurt and out of danger: stay put and let the food do its work.
-  if (bot.health <= 10 && !api.nearestHostile(8)) {
+  // Only when resting can heal: health comes back at 18 food or more (turn 3: it rested at 6
+  // health with 17 food and nothing to eat, which would have been for ever).
+  const canHeal = bot.food >= 18 || Object.keys(have).some((name) => /^(cooked_\w+|bread|apple|beef|porkchop|mutton|baked_potato|carrot)$/.test(name));
+  if (bot.health <= (api.night() ? 10 : 5) && canHeal && !api.nearestHostile(8)) {
     memory.thought = { at: new Date().toISOString(), goal: `resting at ${Math.round(bot.health)} health`, step: null, stuck: {} };
     return null;
   }
@@ -70,6 +73,11 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     sees: (block) => (sight[block] ??= !!api.reachable(block)),
     creatures: seen.creatures.map((c) => c.name),
     near: { crafting_table: !!api.tableNear(24), furnace: !!api.nearest('furnace', 24) },
+    tableKnown: (() => {
+      const table = memory.places?.crafting_table;
+      const from = bot.entity.position;
+      return table && Math.hypot(from.x - table.x, from.z - table.z) < 40 ? table : null;
+    })(),
     night: api.night(),
     exposed: api.exposed(),
     y: bot.entity.position.y,
@@ -122,6 +130,24 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
 
   function bed() {
     if (bedHad || memory.places?.bed || slept) return null;
+    // The flock by the spawn point was three white sheep and a black one. The game's recipe
+    // book (probed live) makes white wool from black wool and white dye, and white dye from a
+    // lily of the valley or bone meal. So the third fleece need not be a fourth sheep.
+    if ((have.white_wool ?? 0) < 3 && (have.white_wool ?? 0) + (have.black_wool ?? 0) >= 3) {
+      const dye = (skill, args, why) => open({ skill, args, why, timeout: 90 });
+      if (have.white_dye) return dye('craft', { item: 'white_wool', times: 1 }, 'black wool dyed white for the bed');
+      if (have.lily_of_the_valley || have.bone_meal) return dye('craft', { item: 'white_dye', times: 1 }, 'white dye for the black wool');
+      if (have.bone) return dye('craft', { item: 'bone_meal', times: 1 }, 'bone meal for white dye');
+      const dusk = time < 14500 && fromHome < 60;
+      if (dusk && world.sees('lily_of_the_valley')) memory.nightPass = now + 40000;
+      const lily = (!world.night || dusk) && world.sees('lily_of_the_valley') && dye('collect', { block: 'lily_of_the_valley', count: 1 }, 'a lily makes white dye for the black wool');
+      if (lily) return lily;
+      // Lilies were found 60 blocks south of home (look_for, 01:38). Too far to see from most places: walk there.
+      const known = memory.known?.lily_of_the_valley;
+      if (known && !world.night && Math.hypot(here.x - known.x, here.z - known.z) > 24) {
+        return { skill: 'goto', args: { x: known.x, z: known.z, range: 4 }, why: 'lilies grow there, and a lily makes the dye for the third fleece', timeout: 300 };
+      }
+    }
     const step = plan('white_bed', 1, world);
     // Sheep were last seen at a known place: look there before wandering.
     const look = memory.lookFirst;
@@ -136,30 +162,53 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
 
   function base() {
     if (!home || slept) return null;
-    const furnished = memory.base && memory.places?.crafting_table && memory.places?.furnace;
+    // The first base is the room, the crafting table and the bed. The furnace follows the race.
+    const tableIn = memory.base && memory.places?.crafting_table?.y === memory.base.y;
+    const furnished = memory.base && tableIn;
     const bedToPlace = bedHad && !memory.places?.bed;
     if (furnished && !bedToPlace) return null;
     if (!memory.base || !furnished) {
-      if (!memory.places?.crafting_table || !memory.base) { const table = (have.crafting_table ?? 0) >= 1 ? null : plan('crafting_table', 1, world); if (table) return table; }
-      if (!memory.places?.furnace || !memory.base) { const furnace = (have.furnace ?? 0) >= 1 ? null : plan('furnace', 1, world); if (furnace) return furnace; }
+      const table = (have.crafting_table ?? 0) >= 1 ? null : plan('crafting_table', 1, world);
+      if (table) return table;
     }
-    if (fromHome > 12 && world.night) return { stuck: 'the walk home waits for morning' };
+    // With the bed in the pack the walk home is worth a short run in the dark.
+    if (fromHome > 12 && world.night && bedToPlace && fromHome < 120) { memory.nightPass = now + 60000; memory.brave = now + 60000; }
+    else if (fromHome > 12 && world.night) return { stuck: 'the walk home waits for morning' };
     if (fromHome > 12) return { skill: 'goto', args: { x: home.x, z: home.z, range: 4 }, why: 'the base is dug at home', timeout: 300 };
     return open({ skill: 'build_base', args: {}, why: bedToPlace ? 'the bed goes in the base' : 'a room under the home site', timeout: 240 }) ?? { stuck: 'building the base keeps failing' };
+  }
+
+  // CT's note: a crafting table or furnace that was put down can be broken and carried on.
+  // Before a step that walks away, one of the player's own within 10 blocks is taken along.
+  function tidy(step) {
+    if (['craft', 'smelt', 'place', 'take_back', 'sleep', 'build_base', 'wear', 'come'].includes(step.skill)) return null;
+    const mine = (memory.own ?? []).find((o) => !api.inBase(o.at) && Math.hypot(here.x - o.at.x, here.y - o.at.y, here.z - o.at.z) < 10);
+    if (!mine || (mine.name === 'furnace' && !hasTool(have, 'wooden_pickaxe'))) return null;
+    return open({ skill: 'take_back', args: { item: mine.name, at: mine.at }, why: `my ${mine.name} comes along (CT's note)`, goal: 'tidy', timeout: 45 });
   }
 
   // In order of how much each matters. A goal returns null when it is done.
   const goals = [
     ['wear', () => (api.unworn().length ? { skill: 'wear', args: {}, why: 'armour carried and not worn', timeout: 20 } : null)],
     ['recover', recover],
+    // The race comes before tools: a bed is wool and planks, and neither needs a pickaxe.
+    ...(slept ? [] : [['bed', bed]]),
     ['pickaxe', tool('wooden_pickaxe')],
     // CT, 2026-10-03: a race with Codex's player to a base and a night in a bed near the
     // spawn point. The bed is three wool, so sheep come before everything but a pickaxe.
-    ['home by dusk', () => (!slept && home && time > 10300 && time < 12700 && fromHome > 20
-      ? { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be at the base before dark', timeout: 240 } : null)],
+    ['home by dusk', () => {
+      // Only with the bed: going home without one wins nothing.
+      if (slept || !home || !(bedHad || memory.places?.bed) || time < 10300 || time > 14200 || fromHome < 20) return null;
+      memory.nightPass = now + 45000;   // the last stretch may run a little past dark
+      return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be at the base before dark', timeout: 240 };
+    }],
+    ['into the base', () => (memory.base && api.night() && api.exposed() && fromHome < 20
+      ? { skill: 'goto', args: { x: memory.base.x, y: memory.base.y, z: memory.base.z, range: 1 }, why: 'the night is spent in the base', timeout: 90 } : null)],
     ['sleep', () => (!slept && memory.places?.bed && time >= 12300 && time < 23300
       ? open({ skill: 'sleep', args: {}, why: 'Sweet Dreams, in my bed at my base', timeout: 100 }) : null)],
-    ...(time < 7000 ? [['bed', bed], ['base', base]] : [['base', base], ['bed', bed]]),
+    // The room first: it is the part that has never been built, and wants time left to fix it.
+    ['base', base],
+    ['bed', bed],
     ['sword', tool('stone_sword')],
     ['stone pickaxe', tool('stone_pickaxe')],
     ['food', food],
@@ -182,8 +231,9 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     if (step.skill === 'explore') step = heading(step, memory, world) ?? { stuck: 'every direction is blocked' };
     if (!step.stuck && step.skill !== 'explore' && repeating(step, memory, signature)) step = { stuck: `${signature(step)} repeated without getting anywhere` };
     if (step.stuck) { stuck[goal] = step.stuck; continue; }
+    step = tidy(step) ?? step;
     memory.thought = { at: new Date().toISOString(), goal, step: `${step.skill} ${JSON.stringify(step.args)}`, why: step.why, stuck };
-    return { ...step, goal };
+    return { goal, ...step };
   }
   memory.thought = { at: new Date().toISOString(), goal: null, step: null, stuck };
   return null;
@@ -230,4 +280,9 @@ export async function learn({ row, memory, fresh }) {
   }
   if (row.skill === 'recover') delete memory.lastDeath;
   if (row.skill === 'come') delete memory.order;
+  // A table that could not be taken back is let go of, so it is not tried for ever.
+  if (row.skill === 'take_back' && !row.ok && row.args?.at) {
+    const at = row.args.at;
+    memory.own = (memory.own ?? []).filter((o) => !(o.at.x === at.x && o.at.y === at.y && o.at.z === at.z));
+  }
 }

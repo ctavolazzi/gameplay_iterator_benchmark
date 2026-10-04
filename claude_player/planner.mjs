@@ -25,7 +25,7 @@ export const SMELTS = {
 // deeper: the height at or below which the block is common, when it has to be dug for.
 export const SOURCES = {
   cobblestone: { blocks: ['stone'], tool: 'wooden_pickaxe', deeper: 58, least: 4 },
-  cobbled_deepslate: { blocks: ['deepslate'], tool: 'wooden_pickaxe', deeper: -8 },
+  cobbled_deepslate: { blocks: ['deepslate'], tool: 'wooden_pickaxe' },   // taken when in sight, never dug down for
   coal: { blocks: ['coal_ore', 'deepslate_coal_ore'], tool: 'wooden_pickaxe', deeper: 44, least: 2 },
   raw_iron: { blocks: ['iron_ore', 'deepslate_iron_ore'], tool: 'stone_pickaxe', deeper: 16 },
   raw_copper: { blocks: ['copper_ore', 'deepslate_copper_ore'], tool: 'stone_pickaxe', deeper: 44 },
@@ -159,6 +159,11 @@ function need(item, count, w, trail) {
     if (waiting?.stuck) { last ??= waiting; continue; }   // the reason kept is the best recipe's
     if (waiting) return waiting;
     if (recipe.table && !w.near.crafting_table) {
+      // A table the player already has, a walk away: go to it rather than make another (CT's note).
+      if (w.tableKnown && !(w.have.crafting_table > 0)) {
+        const walk = open(step('goto', { x: w.tableKnown.x, y: w.tableKnown.y, z: w.tableKnown.z, range: 3 }, 240));
+        if (walk) return walk;
+      }
       if (!(w.have.crafting_table > 0)) {
         const make = need('crafting_table', 1, w, chain);
         if (make?.stuck) { last ??= make; continue; }

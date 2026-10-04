@@ -4,6 +4,13 @@
 // answer is journalled as open, for the Claude session to answer on its next turn.
 // player.mjs loads this file again whenever it changes.
 
+import { appendFileSync } from 'node:fs';
+
+// Notes from a person on how to play better go to this file, one per line. The Claude session
+// reads them, decides whether each holds up, and changes the player's code if it does.
+// The player itself never changes its code because of something said in chat.
+const NOTES = new URL('../data/claude_player/notes.jsonl', import.meta.url);
+const ADVICE = /\b(you (can|could|should|might|may|need|must|don'?t|do not|probably|want)|try|instead|don'?t|do not|never|always|make sure|remember|tip|hint|better|no need|careful|watch out|avoid|use (the|a|an|your)|it'?s (faster|safer|better|easier)|if (there|you)|when you|should)\b/;
 const OTHER_PLAYERS_THAT_ARE_PROGRAMS = /codex|bot$/i;
 const list = (things) => things.join(', ') || 'nothing';
 
@@ -15,8 +22,12 @@ export async function heard({ bot, memory, username, message, status, event, say
   if (now - (memory.lastReply ?? 0) < 1500) return;
   memory.lastReply = now;
 
+  const saying = { collect: 'digging for', craft: 'crafting', smelt: 'smelting', hunt: 'hunting', explore: 'looking around,', goto: 'walking,',
+    build_base: 'building my base,', sleep: 'getting into bed,', descend: 'digging down,', surface: 'climbing out,', place: 'putting down', gather_seeds: 'looking for seeds,',
+    plant_seed: 'planting,', recover: 'fetching what I dropped,', wear: 'putting on armour,', come: 'walking to you,' };
+  const about = status.doing?.args?.block ?? status.doing?.args?.item ?? status.doing?.args?.input ?? status.doing?.args?.animal ?? '';
   const doing = status.doing
-    ? `${status.doing.skill}${status.doing.args?.block ? ` ${status.doing.args.block}` : status.doing.args?.item ? ` ${status.doing.args.item}` : status.doing.args?.animal ? ` ${status.doing.args.animal}` : ''} for ${status.doing.goal ?? 'a request'}`
+    ? `${saying[status.doing.skill] ?? status.doing.skill} ${about} for my goal "${status.doing.goal ?? 'a request'}"`.replace(/\s+/g, ' ')
     : status.sheltered ? 'sitting out the night in my shelter' : status.thought?.goal ? `between steps on ${status.thought.goal}` : 'deciding what to do next';
   const have = status.carried ?? {};
   const wool = Object.entries(have).filter(([name]) => name.endsWith('_wool')).reduce((sum, [, n]) => sum + n, 0);
@@ -28,7 +39,14 @@ export async function heard({ bot, memory, username, message, status, event, say
   const away = them ? `${Math.round(them.position.distanceTo(bot.entity.position))} blocks from you` : 'out of your sight';
 
   let answer;
-  if (/\b(stop|wait|stay|hold on|freeze)\b/.test(text)) {
+  const short = text.trim().split(/\s+/).length <= 5;
+  if (!short && ADVICE.test(text)) {
+    // Checked before the greetings: CT's first tip began "Hey claude, if there's already a
+    // crafting table near you..." and was answered with "Hello fogsift. I am digging for iron".
+    appendFileSync(NOTES, `${JSON.stringify({ at: new Date().toISOString(), username, message, where: status.where, doing: status.doing?.skill ?? null })}\n`);
+    event('player_note', { username, message });
+    answer = `Noted, ${username}, thank you. I have written that down for my Claude session, which changes my code when a note holds up.`;
+  } else if (/\b(stop|wait|stay|hold on|freeze)\b/.test(text)) {
     memory.order = { kind: 'wait', player: username, until: now + 60000 };
     stop();
     answer = 'Stopping. I will wait here for a minute; say resume to send me on.';

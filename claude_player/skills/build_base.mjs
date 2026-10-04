@@ -7,6 +7,10 @@ export default async function buildBase({ bot, api, memory, note }) {
   if (!home) return { ok: false, note: 'no home site remembered' };
   const at = memory.base ?? { x: home.x, y: home.y - 7, z: home.z };
   const c = new api.Vec3(at.x, at.y, at.z);
+  // In by the doorway in the east wall when the room exists; straight down when it is still to be dug.
+  if (memory.base && bot.entity.position.distanceTo(c) > 2.5) {
+    await api.walk(new api.goals.GoalBlock(c.x + 2, c.y, c.z), 150000, 'going down to the doorway').catch((error) => { api.check(); note(error.message); });
+  }
   await api.walk(new api.goals.GoalBlock(c.x, c.y, c.z), 150000, 'going down to the base');
 
   const room = [];
