@@ -66,6 +66,7 @@ async function serve(gamePort, startAuto) {
   let queue = [];          // steps asked for by hand, done before the brain is asked
   let lastSkill = null;
   let lastProblem = null;
+  let stalls = 0;          // walks in a row that went nowhere
   const reflexState = { holdUntil: 0 };
 
   const carried = () => {
@@ -225,6 +226,19 @@ async function serve(gamePort, startAuto) {
       }
       if (!step) continue;
       const row = await execute(step);
+      // A body that has stopped answering. On 2026-10-04, after eight respawns in 131 s, the
+      // player stood still for a whole game day: paths were found in 10 ms and nothing walked
+      // them. A fresh connection moved at once. Three walks in a row that go nowhere, and the
+      // connection is dropped; the reconnect below brings it back.
+      const wentNowhere = !row.ok && row.moved === 0 && /took too long|moved 0 blocks|Took to long/.test(row.note ?? '');
+      stalls = wentNowhere ? stalls + 1 : row.moved > 0 ? 0 : stalls;
+      if (stalls >= 3) {
+        stalls = 0;
+        event('reconnect', { why: 'three walks in a row went nowhere', where: where() });
+        bot.quit();
+        await sleep(3000);
+        continue;
+      }
       if (step.goal) {
         try { await (await fresh('brain.mjs')).learn({ row, memory, fresh }); } catch (error) { problem('brain_error', error); }
       }

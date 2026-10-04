@@ -86,9 +86,11 @@ shelter"; that was already 4 when it was written.)
 
 | 7, continued (to 03:20) | After the commit of turn 7: one more drowning and the eight deaths in 131 s (see Deaths), and the changes listed there. Also: a spider in daylight is no longer backed away from; the sleep skill uses the player's own bed and closes the doorway and the roof first; a way down from a treetop (by the trunk, or by a drop it can take). Another session changed the world at CT's request at 02:58: one sleeper now ends the night for everyone, players glow, and deaths are announced with their place. | The cascade's last death was 03:05:13; the sprint change went in about half a minute later, and no hit was taken in the 45 s after it. That is not proof it works: the sun came up 2 minutes later. Then the player stood at -365 71 460 for the 9 minutes of the next day and did nothing. The pathfinder found a 9-move path from there in 10 ms; holding forward for 1.5 s moved the body 0.12 blocks. Not explained: the game's data gives leaf litter no collision shape (checked), and digging down into the night hole worked. It missed the dusk it was meant to sleep at. |
 
-Next turn's candidate, the first thing to settle: why the body did not move. `body_check` and
-`path_check` are the two skills that show it. If it happens again, restart the player's process
-and see whether a fresh connection moves.
+Settled at 03:24, as far as it goes: the player's process was restarted and the first walk
+worked (`goto` into the base, 13 blocks, where the walk to the bed had just timed out after
+60 s). So the fault was in the old connection's state after eight respawns in 131 s, not in
+the world. What exactly was wrong in it is not known. `player.mjs` now drops the connection
+after three walks in a row that go nowhere, and reconnects. That has not been seen to fire.
 
 Earlier candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
 decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be
@@ -135,7 +137,7 @@ Each one is from the journal, with the turn it came from.
 - The base's roof was open after the second trip in; a way in that can be closed (a door or a hatch) is not built.
 - Magma under water is not recognised.
 - All the diamond and iron gear was lost at 02:39:06 and has to be made again.
-- Why the body would not move at -365 71 460 for a whole game day.
+- What in the old connection stopped the body moving after the eight deaths (a restart cured it).
 - The base has no way in that stays: every entry is dug, every exit leaves a hole. A staircase and a door.
 - Nine advancements, the same nine as at 19:34 the day before. Nothing was earned in turn 7.
 - `build_base` says "put down crafting_table" when the table was already there.
