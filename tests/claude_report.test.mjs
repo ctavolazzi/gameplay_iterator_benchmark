@@ -51,3 +51,28 @@ test('a quiet stretch with nothing wrong says so', () => {
   assert.deepEqual(d.decide, []);
   assert.match(page(d), /Nothing asks for a decision/);
 });
+
+test('the watcher wakes the session when one step has failed six times the same way, and not at five', async () => {
+  const { spawn } = await import('node:child_process');
+  const { appendFileSync, mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'claude-watch-'));
+  writeFileSync(join(dir, 'journal.jsonl'), '');
+  writeFileSync(join(dir, 'control.json'), JSON.stringify({ pid: process.pid }));
+  const watcher = spawn(process.execPath, [new URL('../claude_player/watch_events.mjs', import.meta.url).pathname, '30', '30'], { env: { ...process.env, CLAUDE_PLAYER_DATA: dir } });
+  let said = '';
+  watcher.stdout.on('data', (chunk) => { said += chunk; });
+  const ended = new Promise((resolve) => watcher.on('exit', resolve));
+  const row = (y) => `${JSON.stringify({ at: new Date().toISOString(), kind: 'skill', skill: 'surface', args: {}, ok: false, note: `climbed 0 blocks to ${y}, still under ground`, ms: 250 })}\n`;
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  await pause(500);
+  for (let i = 0; i < 5; i++) appendFileSync(join(dir, 'journal.jsonl'), row(-3));
+  // A step the reflexes stopped does not count toward the six.
+  appendFileSync(join(dir, 'journal.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), kind: 'skill', skill: 'surface', args: {}, ok: false, note: 'reflex: fighting a zombie', ms: 250 })}\n`);
+  await pause(2600);
+  assert.equal(said, '');
+  appendFileSync(join(dir, 'journal.jsonl'), row(-4));
+  await ended;
+  assert.match(said, /failed 6 times the same way: surface \{\}: climbed N blocks to N, still under ground/);
+});

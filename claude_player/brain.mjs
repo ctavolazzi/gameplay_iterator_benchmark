@@ -386,6 +386,20 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['diamond leggings', item('diamond_leggings')],
     ['diamond helmet', item('diamond_helmet')],
     ['diamond boots', item('diamond_boots')],
+    // fogsift, 07:38 on 2026-10-04: "prepare to get some crops going". A hoe, seeds, and a plot
+    // of wheat beside water, by day and near home, when everything above is done. The plot is
+    // looked at again every ten minutes for wheat that is ripe.
+    ['crops', () => {
+      // Not in the late afternoon: seeds are gathered 30 blocks out, "home by dusk" calls it
+      // back from 20, and the two took turns from 09:01 on 2026-10-04 until the bed would take it.
+      if (world.night || !home || fromHome > 100 || (memory.places?.bed && time >= 10000)) return null;
+      if (!Object.keys(have).some((name) => name.endsWith('_hoe'))) return plan('wooden_hoe', 1, world);
+      const seeds = have.wheat_seeds ?? 0;
+      if (seeds < 6 && !(memory.farm?.planted >= 6)) return open({ skill: 'gather_seeds', args: { count: 6 - seeds }, why: `${seeds} seeds, and 6 make a plot`, timeout: 120 });
+      const tended = memory.farm?.at && now - memory.farm.at < 600000;
+      if (seeds > 0 || (memory.farm && !tended)) return open({ skill: 'farm', args: {}, why: seeds ? `${seeds} seeds to plant beside water` : 'a look at the plot for ripe wheat', timeout: 180 });
+      return null;
+    }],
     // A night the others would not sleep through is spent under ground, after diamonds: they
     // are what everything further on is made of, and under ground the night does not matter.
     ['mining', () => (world.night ? plan('diamond', (have.diamond ?? 0) + 3, world) : null)],

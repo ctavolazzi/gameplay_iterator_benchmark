@@ -210,14 +210,18 @@ async function draw(sight, base, view, creaturesNear, nameOf, write) {
   const told = sight.describe(s, nameOf);
   const side = (x) => (x < s.width * 0.36 ? 'left' : x > s.width * 0.64 ? 'right' : 'ahead');
   const seen = [];
+  const named = [];
   const scale = s.width >= 480 ? 2 : 1;
   drawn.forEach((d, i) => {
     const e = creaturesNear[i];
     if (d.dots < (e.thing ? 6 : 3)) return;
     seen.push({ name: e.name, kind: e.kind, hostile: e.hostile, distance: +e.distance.toFixed(1), side: side(d.x) });
-    if (!write || e.thing || seen.filter((v) => v.kind !== 'item').length > 8) return;
+    if (!write || e.thing || (!e.hostile && e.kind !== 'player' && e.distance > 24)) return;
     const label = `${e.name} ${Math.round(e.distance)}`;
-    const x = clamp(d.x - sight.textWidth(label, scale) / 2, 2, s.width - sight.textWidth(label, scale) - 2), y = Math.max(2, d.y - 9 * scale);
+    const wide = sight.textWidth(label, scale);
+    const x = clamp(d.x - wide / 2, 2, s.width - wide - 2), y = Math.max(2, d.y - 9 * scale);
+    if (named.length >= 8 || named.some((n) => x < n.x + n.wide && n.x < x + wide && Math.abs(n.y - y) < 9 * scale)) return;
+    named.push({ x, y, wide });
     sight.write(s.rgb, s.width, s.height, x, y, label, scale, e.hostile ? [255, 120, 110] : [255, 255, 255]);
   });
   if (told.ahead.entity != null) told.ahead = { entity: creaturesNear[told.ahead.entity]?.name ?? 'something', distance: told.ahead.distance };

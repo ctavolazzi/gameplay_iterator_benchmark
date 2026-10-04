@@ -56,6 +56,8 @@ stopped after 2 hours, and that is how it was stopped in the middle of a good ru
 | `textures.mjs` | Reads the game's own block textures out of the installed game once, into `data/claude_player/sight-cache/` (not in git). |
 | `actions.mjs` | What can be asked for over the control port besides player.mjs's own commands (`look`, `score`). Loaded again when it changes, so a new command needs no restart. |
 | `score.mjs`, `challenge.json` | The challenge with Codex's player, and its score counted from the server's log. |
+| `report.mjs`, `asks.json` | The report the session reads at the start of each turn (what needs deciding first), and what has been asked for with whether each is done. |
+| `RESEARCH.md` | What others have built along these lines, with sources, and what this player takes from each. |
 | `skills/*.mjs` | One small file per thing the player can be asked to do. |
 | `pure.mjs` | Small functions with no game connection. |
 | `../tests/claude_*.test.mjs` | 44 tests: the planner played from empty hands to an iron pickaxe; the reflex rules held against the situations that killed the player; the room's way out; what was really said in chat read for what it asked; the score; the eyes on a made-up world. |

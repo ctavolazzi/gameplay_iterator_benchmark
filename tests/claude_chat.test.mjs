@@ -39,6 +39,8 @@ test('a question about the bed is not a request to get into it, and come on is n
   assert.equal(reads('take a look at that cave'), 'look');
   assert.equal(reads("what's the score"), 'score');
   assert.equal(reads('what are you doing'), 'greeting');
+  assert.equal(reads('Claude plant the crops here'), 'farm');
+  assert.equal(reads('we could put the farm by me'), 'farm');
 });
 
 // A player as chat.mjs needs it: where it is, the time, who is on line.

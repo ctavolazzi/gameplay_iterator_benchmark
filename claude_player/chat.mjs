@@ -45,6 +45,7 @@ export function reads(message) {
   if (/\b(resume|continue|carry on|go on|go ahead|keep going)\b/.test(text)) return 'resume';
   // "Come on everybody" is not "come to me".
   if (/\b(come (here|over|to me|with me|back)|follow( me)?|over here|to me)\b/.test(text) || /^\s*(claude[,:]?\s*)?come( here)?( please| plz| pls)?[.!]*\s*$/.test(text)) return 'come';
+  if (/\b(plant|farm|crops?|wheat|plot)\b.*\b(here|there|by me|where i (am|stand))\b/.test(text)) return 'farm';
   if (/\b(what (do|can|did) you see|what'?s (around|near|ahead|in front)|look (at|around|north|south|east|west|up|down|behind|ahead)|take a look|have a look|screenshot|picture|photo|show me)\b/.test(text)) return 'look';
   if (/\bwhere\b/.test(text)) return 'where';
   if (/\b(inventory|carrying|what do you have|what have you got|items)\b/.test(text)) return 'inventory';
@@ -158,6 +159,15 @@ export async function heard({ bot, memory, username, message, status, event, say
     memory.order = { kind: 'come', player: username, until: now + 90000 };
     stop();
     answer = `Coming to you. I am ${away}.`;
+  } else if (asked === 'farm') {
+    // Where a person stands is where the plot goes: by the water nearest to that place.
+    if (!them) answer = 'I cannot see you from here. Stand where you want the plot and say it again when I am near.';
+    else {
+      const at = them.position.floored();
+      memory.farmWanted = { x: at.x, y: at.y, z: at.z, by: username };
+      delete memory.farm;
+      answer = `I will make the wheat plot by the water nearest to ${at.x} ${at.y} ${at.z}, when I have a hoe and seeds.`;
+    }
   } else if (asked === 'look') {
     // The player's eyes: a picture from where it stands, and what is in it in words.
     if (!existsSync(new URL('./eyes.mjs', import.meta.url))) answer = 'I cannot see yet: my session is still building my eyes.';

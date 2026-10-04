@@ -616,8 +616,10 @@ export function make(bot, signal, memory = {}) {
 
   // What the player carries that belongs in the chest: [name, count]. Not junk, not what a
   // trip needs, and one of the best pickaxe, the best sword and an iron pickaxe stay in hand.
+  // A hoe stays too: at 08:59 on 2026-10-04 the crops goal made a hoe three times and this put
+  // each one in the chest a second later.
   function spares() {
-    const keepOne = new Set([bestOf('_pickaxe')?.name, bestOf('_sword')?.name, bestOf('_axe')?.name, 'iron_pickaxe'].filter(Boolean));
+    const keepOne = new Set([bestOf('_pickaxe')?.name, bestOf('_sword')?.name, bestOf('_axe')?.name, bestOf('_hoe')?.name, 'iron_pickaxe'].filter(Boolean));
     const kept = {};
     const out = {};
     for (const item of bot.inventory.items()) {
@@ -750,6 +752,78 @@ export function make(bot, signal, memory = {}) {
     await sleep(400);
     const crop = nameAt(earth.offset(0, 1, 0));
     return crop === 'wheat' ? { ok: true, at: round(earth) } : { ok: false, error: `planted and the block above is ${crop}` };
+  }
+
+  // A wheat plot by water (fogsift, 2026-10-04: "prepare to get some crops going"). Earth that
+  // is level with open water and within 4 blocks of it stays wet when tilled, and wheat grows
+  // fastest on wet ground. near: a place to make the plot by, or nothing for the best bank
+  // within 48 blocks. Every seed carried is planted; what is ripe is cut and planted again.
+  async function farm(near = null) {
+    if (!find(/_hoe$/)) return { ok: false, error: 'no hoe' };
+    const keepClear = others();
+    const earthAt = (at) => /^(grass_block|dirt|farmland)$/.test(nameAt(at) ?? '') && /^(air|short_grass|wheat)$/.test(nameAt(at.offset(0, 1, 0)) ?? '');
+    let water = memory.farm?.water ? new Vec3(memory.farm.water.x, memory.farm.water.y, memory.farm.water.z) : null;
+    if (water && nameAt(water) !== 'water') water = null;
+    if (!water) {
+      // With no place asked for, the bank nearest home that is good enough: the first plot was
+      // made wherever the player stood with seeds in its hand, 95 blocks from its base.
+      const reach = near ? 16 : 64;
+      const home = memory.home ? new Vec3(memory.home.x, memory.home.y, memory.home.z) : bot.entity.position;
+      const open = bot.findBlocks({ point: near ? new Vec3(near.x, near.y, near.z) : home, matching: bot.registry.blocksByName.water.id, maxDistance: reach, count: 600 })
+        .filter((at) => nameAt(at.offset(0, 1, 0)) === 'air' && !keepClear.some((other) => other.distanceTo(at) < 6) && !inBase(at));
+      let best = null;
+      for (const at of open.filter((_, i) => i % 3 === 0).slice(0, 80)) {
+        let banks = 0;
+        for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) if (earthAt(at.offset(dx, 0, dz))) banks += 1;
+        if (!best || banks > best.banks) best = { at, banks };
+      }
+      if (!best || best.banks < 4) return { ok: false, error: `no open water with earth level beside it within ${reach} blocks${best ? ` (the best had ${best.banks} blocks of bank)` : ''}` };
+      water = best.at;
+    }
+    const plots = [];
+    for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
+      const at = water.offset(dx, 0, dz);
+      if (earthAt(at) && !keepClear.some((other) => other.distanceTo(at) < 4)) plots.push(at);
+    }
+    plots.sort((a, b) => a.distanceTo(water) - b.distanceTo(water));
+    let tilled = 0, planted = 0, cut = 0, growing = 0, lastError = null;
+    for (const at of plots) {
+      check();
+      const above = at.offset(0, 1, 0);
+      const crop = bot.blockAt(above);
+      const ripe = crop?.name === 'wheat' && Number(crop.getProperties().age) === 7;
+      if (crop?.name === 'wheat' && !ripe) { growing += 1; continue; }
+      if (!ripe && !find(/^wheat_seeds$/)) continue;
+      try {
+        await walk(new goals.GoalNear(at.x, at.y + 1, at.z, 2), 20000, 'walking to the plot');
+        if (ripe || nameAt(above) === 'short_grass') {
+          await within(bot.dig(bot.blockAt(above), true), 4000, ripe ? 'cutting the wheat' : 'clearing the grass');
+          await sleep(400);
+          if (ripe) { cut += 1; await walk(new goals.GoalNear(at.x, at.y + 1, at.z, 0), 4000, 'picking up the wheat').catch(() => {}); }
+        }
+        if (nameAt(at) !== 'farmland') {
+          await bot.equip(find(/_hoe$/), 'hand');
+          await bot.lookAt(at.offset(0.5, 1, 0.5), true);
+          await within(bot.activateBlock(bot.blockAt(at)), 4000, 'tilling');
+          await sleep(400);
+          if (nameAt(at) !== 'farmland') { lastError = `tilled and the block is still ${nameAt(at)}`; continue; }
+          tilled += 1;
+        }
+        const seeds = find(/^wheat_seeds$/);
+        if (!seeds) continue;
+        await bot.equip(seeds, 'hand');
+        await within(bot.placeBlock(bot.blockAt(at), new Vec3(0, 1, 0)), 4000, 'planting').catch(() => {});
+        await sleep(300);
+        if (nameAt(above) === 'wheat') planted += 1;
+      } catch (error) {
+        check();
+        lastError = error.message;
+      }
+    }
+    memory.farm = { water: { x: water.x, y: water.y, z: water.z }, planted: (memory.farm?.planted ?? 0) + planted, growing: growing + planted, at: Date.now() };
+    const at = memory.farm.water;
+    return tilled + planted + cut > 0 ? { ok: true, water: at, plots: plots.length, tilled, planted, cut, growing: growing + planted }
+      : { ok: false, error: lastError ?? `nothing to do at the plot by ${at.x} ${at.y} ${at.z}: ${plots.length} places, ${growing} growing, ${carried().wheat_seeds ?? 0} seeds` };
   }
 
   // Four blocks closed around and one overhead.
@@ -981,5 +1055,5 @@ export function make(bot, signal, memory = {}) {
 
   return { markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
-    unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
+    unworn, wear, hunt, gatherSeeds, plantSeed, farm, goals, Vec3, round, isHostile };
 }
