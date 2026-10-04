@@ -104,7 +104,7 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     if (!death) return null;
     const age = now - death.at;
     const worth = Object.keys(death.lost ?? {}).some((name) => WORTH_GOING_BACK_FOR.test(name));
-    if (age > 270000 || !worth) { delete memory.lastDeath; return null; }
+    if (age > 270000 || !worth || api.dangerous(death.where)) { delete memory.lastDeath; return null; }
     if (world.night) return { stuck: 'what was dropped is on the surface at night' };
     return open({ skill: 'recover', args: { where: death.where }, timeout: 120,
       why: `what was dropped ${Math.round(age / 1000)} s ago` });
@@ -156,8 +156,12 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     }
   }
   // After a death, waking up far from the bed means the bed no longer holds the spawn point.
+  memory.danger = (memory.danger ?? []).filter((zone) => zone.until > now);
   if (memory.lastDeath && memory.respawnSeen !== memory.lastDeath.at) {
     memory.respawnSeen = memory.lastDeath.at;
+    // Where it died under ground is kept away from for an hour: nothing there is fetched or dug.
+    const died = memory.lastDeath.where;
+    if (died && died.y < 55) memory.danger.push({ ...died, r: 24, until: now + 3600000, why: 'died here' });
     const at = memory.places?.bed;
     if (!at || Math.hypot(here.x - at.x, here.y - at.y, here.z - at.z) > 8) memory.spawnBed = false;
   }

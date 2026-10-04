@@ -116,6 +116,14 @@ export function make(bot, signal, memory = {}) {
     return out;
   };
   const find = (pattern) => bot.inventory.items().find((item) => pattern.test(item.name)) ?? null;
+  // The best of a kind that is carried: a diamond sword before a stone one. Death 21 was fought
+  // with the stone sword while the diamond sword stayed in the pack.
+  const GRADES = ['netherite', 'diamond', 'iron', 'stone', 'golden', 'wooden'];
+  const bestOf = (ending) => bot.inventory.items().filter((item) => item.name.endsWith(ending))
+    .sort((x, y) => GRADES.findIndex((g) => x.name.startsWith(g)) - GRADES.findIndex((g) => y.name.startsWith(g)))[0] ?? null;
+  // Places to keep away from for a while: where it died under ground, where cave spiders are.
+  const dangerous = (at) => (memory.danger ?? []).some((zone) => zone.until > Date.now()
+    && Math.hypot(at.x - zone.x, at.y - zone.y, at.z - zone.z) < zone.r);
   const nameAt = (at) => bot.blockAt(at)?.name ?? null;
   const solid = (at) => bot.blockAt(at)?.boundingBox === 'block';
   const matcher = (name) => name === 'log' ? (b) => b.name.endsWith('_log') : (b) => b.name === name;
@@ -282,7 +290,7 @@ export function make(bot, signal, memory = {}) {
     const from = bot.entity.position;
     const isLog = name === 'log' || name.endsWith('_log');
     const found = bot.findBlocks({ matching: matcher(name), maxDistance: 48, count: 1024 })
-      .filter((at) => !crowded(at) && !inBase(at))
+      .filter((at) => !crowded(at) && !inBase(at) && !dangerous(at))
       .sort((a, b) => a.distanceTo(from) - b.distanceTo(from));
     for (const at of found) {
       if (isLog) { const height = trunkHeight(at); if (height === null || height > 3) continue; }
@@ -817,7 +825,7 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, at: round(bed.position), time, upAt: bot.time.timeOfDay };
   }
 
-  return { breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
 }

@@ -12,7 +12,6 @@
 //   4  the hole is dug in real ground found nearby; a failed try waits longer each time; a
 //      fight starts only with something that can be seen; underground the night is for mining.
 
-const WEAPONS = [/_sword$/, /_axe$/, /_pickaxe$/];
 
 export async function tick({ bot, api, state, memory, busy, event, interrupt }) {
   const now = Date.now();
@@ -26,6 +25,10 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
     if (!state.seen[foe.id]) {
       state.seen[foe.id] = now;
       event('encounter', { foe: foe.name, distance: +distance.toFixed(1), health, busy, night: api.night() });
+      // Cave spiders come from a spawner in a mineshaft and keep coming: the place is left alone.
+      if (foe.name === 'cave_spider' && !api.dangerous(me)) {
+        (memory.danger ??= []).push({ ...api.round(me), r: 32, until: now + 3600000, why: 'cave spiders' });
+      }
     }
   }
 
@@ -76,7 +79,7 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
     bot.setControlState('jump', false);
   }
 
-  const weapon = WEAPONS.map((kind) => api.find(kind)).find(Boolean) ?? null;
+  const weapon = api.bestOf('_sword') ?? api.bestOf('_axe') ?? api.bestOf('_pickaxe');
   const creeper = foe?.name === 'creeper';
   const enclosed = api.enclosed() || api.snug();
   const night = api.night();
@@ -181,7 +184,18 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
       await bot.lookAt(target.position.offset(0, (target.height ?? 1.8) * 0.6, 0), true);
       bot.attack(target);
       state.fight.hits += 1;
+      state.fight.lastHitAt = now;
       state.lastHit = now;
+    }
+    // Death 21: a cave spider in a mineshaft, 52 s of "fighting" with no hit landed while its
+    // bites and poison took 20 health. A fight that has not landed a hit for 6 s is not a
+    // fight: leave, and remember the place as one to keep away from for an hour.
+    if (now - Math.max(state.fight.started, state.fight.lastHitAt ?? 0) > 6000) {
+      event('fight_given_up', { foe: state.fight.name, hits: state.fight.hits, health, where: api.round(me) });
+      (memory.danger ??= []).push({ ...api.round(me), r: 28, until: now + 3600000, why: `a ${state.fight.name} that could not be hit` });
+      state.fight = null;
+      state.fleeing = now + 6000;
+      state.holdUntil = now + 7000;
     }
     return;
   }

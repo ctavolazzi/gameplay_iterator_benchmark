@@ -48,7 +48,7 @@ chat or in the server log, so nothing here can see it. It is not counted.
 
 ## Deaths
 
-Twenty, from the server's logs. (An early commit said "3 deaths, all before the night
+Twenty-one, from the server's logs. (An early commit said "3 deaths, all before the night
 shelter"; that was already 4 when it was written.)
 
 | Time | The server's words | What the journal shows | What was changed |
@@ -67,6 +67,8 @@ shelter"; that was already 4 when it was written.)
 
 | 02:50:48 | drowned | digging 8 stone for a furnace from a river bed. The breath reflex walked it to "the last place with a full breath", which was one step into the river. | the nearest place with the head in air is looked for in the world; nothing beside water is gone for; a path through water costs six times a path round it |
 | 03:03:02 to 03:05:13 | slain by Spider once and by Zombie seven times: eight deaths in 131 s | it woke unarmed at night at the world's spawn point, next to what had just killed it, each time. Backing away by pathfinder did not get away: about 7 hits each time, mostly standing. The bed did not hold the spawn point, because it had been knocked out and put back and not slept in again. | running away is now plain sprinting, with no path to think about; with nothing to close a hole with, the shelter is two blocks into the side of the hole; the bed comes first at night |
+
+| 04:32:03 | slain by Cave Spider | at -394 -47 436, in a mineshaft, digging diamonds for a chestplate. It killed the first spider in 5 s. The second "fight" lasted 52 s and landed no hit, with the stone sword in hand and the diamond sword in the pack. Lost: the diamond pickaxe and sword, all the iron armour, the shield. | the best sword carried is used; a fight that lands no hit for 6 s is given up and run from; where cave spiders are met, and where it dies under ground, is kept away from for an hour |
 
 ## Turns
 
@@ -89,6 +91,8 @@ shelter"; that was already 4 when it was written.)
 | 8 (03:54) | Read 26 minutes alone (03:27 to 03:53): 101 steps, 62 failed, no deaths, nothing earned. Changed: gaps are no longer closed with planks; `leave_base` opens the doorway from inside whatever it was closed with, and the brain uses it by day; the stall watchdog counts only walks that timed out, at most once in 10 minutes; `explore` says why it did not move. | The good part first: it slept in its bed at dusk twice (03:38:31 at game time 15358, 03:49:42 at 13290), "closed 2 gaps before bed", and was up at time 0 both times: one sleeper ends the night, so both nights were skipped. `take_back` ran 3 times in those 26 minutes, where it had run 175 times in 55 before `leaves()`. The bad part: one of the 2 gaps was closed with birch planks, planks are never dug through, and from 03:39 it was shut in its base for 14 minutes: "No path to the goal!" and the watchdog reconnecting 5 times to no purpose. After the change: "opened 2 blocks of the doorway" at 03:56:23, then a chicken hunted and cooked. |
 
 | 9 (04:19) | Read 22 minutes alone (03:57 to 04:19): 60 steps, 3 failed, no damage taken at all, no deaths, nothing earned. Changed: what stands in the base is remembered apart from what was last put down anywhere (`baseHas`); a new goal, The Parrots and the Bats, breeds two chickens with seeds when two are in sight (`breed`). | Its best stretch so far. Two more dusks slept through (04:00:16 at game time 12551, 04:11:38 at 13502) and the doorway opened each morning. Full iron armour and a shield made and put on, iron sword, iron pickaxe, a bucket, 3 diamonds, 475 cobblestone. Both hunts worked, so hunting is no longer the candidate. The fault this turn: 36 blocks down a mine it decided its base had no crafting table, because the table it had just put down in the mine had overwritten the record, and walked up to rebuild. After the change the repair it was already on finished ("put down crafting_table, furnace") and it went back to iron. The breeding goal has not run yet. |
+
+| 10 (04:44) | Read 22 minutes alone (04:21 to 04:43): 58 steps, 15 failed, one death (see Deaths), nothing earned. Changed: the three things in that death's row. | Before the death it did what it was meant to: one diamond pickaxe from 3 diamonds (04:23:18; it had been three pickaxes from 9), a diamond sword (04:24:50), then down to -47 for diamonds for armour. After it: it woke in its base (the bed held the spawn point this time), slept the night away, and had an iron pickaxe, chestplate and sword again within 10 minutes. The changes have not met a cave spider yet. |
 
 Settled at 03:24, as far as it goes: the player's process was restarted and the first walk
 worked (`goto` into the base, 13 blocks, where the walk to the bed had just timed out after
@@ -139,6 +143,7 @@ Each one is from the journal, with the turn it came from.
 - A reading can be full and still be wrong about where the air is: one step into a river the breath is full (death 12). Look at the blocks, not the number.
 - Two of my own rules met and shut the player in: "close the doorway before bed" used planks, and "never dig through planks" would not let it out (turn 8). A rule about what may be broken has to know what the player itself puts down.
 - A watchdog needs to know the difference between "cannot" and "did not". It reconnected 5 times for a wall (turn 8).
+- Deep is where the gear is lost now: every death since the nights were solved has been under ground (a flooded cave, magma, a mineshaft), and each took everything it had made. Going down with all of it is the fault, not any one monster (turn 10). A chest in the base for what is not needed on the trip is not built yet.
 - `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
 - What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
 
