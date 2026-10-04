@@ -40,6 +40,7 @@ Advancements. Earned means the server's log said so (`grep "Claude has" logs/lat
 | Suit Up | earned 18:20:39, the same (lost with everything else 99 seconds later) |
 | Sweet Dreams | earned 18:55:29 |
 | Diamonds! | earned 19:34:29, by the brain alone |
+| Voluntary Exile | earned 05:11:45 the next day. Not a goal: a pillager patrol met it at the top of its climb out of a mine, and the fight reflex killed four of them with the iron sword, the captain among them. |
 | A Seedy Place | earned 19:07:32, by the brain alone the morning after the bed: "got 2 wheat_seeds from 3 clumps of grass", then planted. The first `gather_seeds` got nothing in 150 s; the rewrite, which walks next to each clump, worked first time. |
 | Not Today, Thank You; Hot Stuff; Ice Bucket Challenge; Cover Me with Diamonds | not started (a shield is held and a bucket is carried, but nothing uses them yet) |
 
@@ -94,6 +95,8 @@ shelter"; that was already 4 when it was written.)
 
 | 10 (04:44) | Read 22 minutes alone (04:21 to 04:43): 58 steps, 15 failed, one death (see Deaths), nothing earned. Changed: the three things in that death's row. | Before the death it did what it was meant to: one diamond pickaxe from 3 diamonds (04:23:18; it had been three pickaxes from 9), a diamond sword (04:24:50), then down to -47 for diamonds for armour. After it: it woke in its base (the bed held the spawn point this time), slept the night away, and had an iron pickaxe, chestplate and sword again within 10 minutes. The changes have not met a cave spider yet. |
 
+| 11 (05:08) | Read 22 minutes alone (04:45 to 05:07): 34 steps, 6 failed, no deaths. Changed: sticks and wood are put in the pack at the surface before going down (`provisions`); the bed is not set off for from more than 20 blocks above or below it; the climb to the surface goes in legs of 10 blocks; a table counts as near only when it is near in height too. | What the journal showed: a shield, iron helmet, boots and a bucket made; then at 60 blocks down the last pickaxe wore out with one plank and no stick in the pack. It set off for its bed 4 times from down there (100 s each, never arrived), then spent 280 s on a climb that did not move it one block. With the climb in legs: "climbed 63 blocks to 66" in about 70 s. At the top a pillager patrol was waiting; four fights of 4 s and 5 hits each, health 19 to 7.5, and Voluntary Exile. The provisions rule has not been through a trip down yet. |
+
 Settled at 03:24, as far as it goes: the player's process was restarted and the first walk
 worked (`goto` into the base, 13 blocks, where the walk to the bed had just timed out after
 60 s). So the fault was in the old connection's state after eight respawns in 131 s, not in
@@ -144,6 +147,7 @@ Each one is from the journal, with the turn it came from.
 - Two of my own rules met and shut the player in: "close the doorway before bed" used planks, and "never dig through planks" would not let it out (turn 8). A rule about what may be broken has to know what the player itself puts down.
 - A watchdog needs to know the difference between "cannot" and "did not". It reconnected 5 times for a wall (turn 8).
 - Deep is where the gear is lost now: every death since the nights were solved has been under ground (a flooded cave, magma, a mineshaft), and each took everything it had made. Going down with all of it is the fault, not any one monster (turn 10). A chest in the base for what is not needed on the trip is not built yet.
+- A long way is planned in short legs: 63 blocks up in one request was thought about for 280 s and not walked; in legs of 10 it took about 70 s (turn 11, and the same was true of long walks on the level in turn 3).
 - `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
 - What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
 
@@ -154,7 +158,7 @@ Each one is from the journal, with the turn it came from.
 - All the diamond and iron gear was lost at 02:39:06 and has to be made again.
 - What in the old connection stopped the body moving after the eight deaths (a restart cured it).
 - The base has no way in that stays: every entry is dug, every exit leaves a hole. A staircase and a door.
-- Nine advancements, the same nine as at 19:34 the day before. Nothing was earned in turn 7.
+- After a fight it stood at 7.5 health with 11 food and nothing to eat: food is hunted only when animals are in sight, and none is kept back.
 - `build_base` says "put down crafting_table" when the table was already there.
 - `brave` and `nightPass` in memory were set by hand during the race. The brain sets `nightPass` in two places; nothing sets `brave` unless the bed is in the pack.
 - Diamond armour is not put on over iron: `wear` only fills an empty place.

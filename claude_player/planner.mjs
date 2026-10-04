@@ -86,7 +86,7 @@ function need(item, count, w, trail) {
   // Something only found up top: wait for morning, climb out, or go looking.
   const onTheSurface = (thing) => {
     if (w.night) return { stuck: `${thing} waits for morning` };
-    if (underGround) return open(step('surface', {}, 300)) ?? { stuck: 'cannot get back to the surface' };
+    if (underGround) return open(step('surface', {}, 600)) ?? { stuck: 'cannot get back to the surface' };
     return null;
   };
   const explore = () => open(step('explore', {}, 90)) ?? { stuck: `nowhere left to look for ${item}` };

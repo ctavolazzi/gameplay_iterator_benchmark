@@ -85,7 +85,8 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     tableKnown: (() => {
       const table = memory.places?.crafting_table;
       const from = bot.entity.position;
-      return table && Math.hypot(from.x - table.x, from.z - table.z) < 40 ? table : null;
+      // Near means near in height too: it set off for a table 63 blocks under its feet (turn 11).
+      return table && Math.hypot(from.x - table.x, from.y - table.y, from.z - table.z) < 40 ? table : null;
     })(),
     night: api.night(),
     exposed: api.exposed(),
@@ -241,11 +242,15 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     // the night is skipped, and the base becomes the place to wake up after a death.
     ['home by dusk', () => {
       if (!home || !memory.places?.bed || time < 10300 || time > 14200 || fromHome < 20 || fromHome > 160) return null;
+      if (!world.exposed && Math.abs(here.y - memory.places.bed.y) > 20) return null;   // deep under ground: stay there
       memory.nightPass = now + 45000;   // the last stretch may run a little past dark
       return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be in bed at dusk', timeout: 240 };
     }],
     ['sleep', () => {
       if (!memory.places?.bed || fromHome > 60 || !(bedTime || (time >= 12300 && time < 12541))) return null;
+      // Turn 11: from 56 blocks under its bed it set off for it 4 times, 100 s each, and never
+      // arrived. Deep under ground the night does not matter: the bed is for when it is near.
+      if (Math.abs(here.y - memory.places.bed.y) > 20) return null;
       // Turn 7: the walk to the bed kept being stopped by the reflex that digs in at night.
       memory.nightPass = now + 45000;
       return open({ skill: 'sleep', args: {}, why: 'a night in the bed is a night skipped', timeout: 100 });
@@ -267,6 +272,18 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['stone pickaxe', tool('stone_pickaxe')],
     ['base', base],
     ['bed', bed],
+    // Turn 11: 60 blocks down its last pickaxe wore out with no stick to make another, and it
+    // dug its way up by hand for more than 3 minutes. Before going down: sticks for two tools
+    // and wood for a table. Only asked for at the surface; under ground it works with what it has.
+    ['provisions', () => {
+      const count = (ending) => Object.entries(have).filter(([name]) => name.endsWith(ending)).reduce((sum, [, n]) => sum + n, 0);
+      const wood = count('_log') * 4 + count('_planks');
+      const sticks = have.stick ?? 0;
+      if ((sticks >= 4 && wood >= 6) || world.night) return null;
+      if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      if (wood < 8) return plan(`${world.wood}_log`, count('_log') + 2, world);
+      return plan('stick', 4, world);
+    }],
     ['food', food],
     ['A Seedy Place', seedy],
     ['iron pickaxe', tool('iron_pickaxe')],
