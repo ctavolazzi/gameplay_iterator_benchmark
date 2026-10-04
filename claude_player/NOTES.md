@@ -40,6 +40,7 @@ Advancements. Earned means the server's log said so (`grep "Claude has" logs/lat
 | Suit Up | earned 18:20:39, the same (lost with everything else 99 seconds later) |
 | Sweet Dreams | earned 18:55:29 |
 | Diamonds! | earned 19:34:29, by the brain alone |
+| Cover Me with Diamonds | earned 05:28:47, by the brain alone: a diamond pickaxe, sword and all four pieces of armour made in 10 minutes |
 | Voluntary Exile | earned 05:11:45 the next day. Not a goal: a pillager patrol met it at the top of its climb out of a mine, and the fight reflex killed four of them with the iron sword, the captain among them. |
 | A Seedy Place | earned 19:07:32, by the brain alone the morning after the bed: "got 2 wheat_seeds from 3 clumps of grass", then planted. The first `gather_seeds` got nothing in 150 s; the rewrite, which walks next to each clump, worked first time. |
 | Not Today, Thank You; Hot Stuff; Ice Bucket Challenge; Cover Me with Diamonds | not started (a shield is held and a bucket is carried, but nothing uses them yet) |
@@ -97,15 +98,18 @@ shelter"; that was already 4 when it was written.)
 
 | 11 (05:08) | Read 22 minutes alone (04:45 to 05:07): 34 steps, 6 failed, no deaths. Changed: sticks and wood are put in the pack at the surface before going down (`provisions`); the bed is not set off for from more than 20 blocks above or below it; the climb to the surface goes in legs of 10 blocks; a table counts as near only when it is near in height too. | What the journal showed: a shield, iron helmet, boots and a bucket made; then at 60 blocks down the last pickaxe wore out with one plank and no stick in the pack. It set off for its bed 4 times from down there (100 s each, never arrived), then spent 280 s on a climb that did not move it one block. With the climb in legs: "climbed 63 blocks to 66" in about 70 s. At the top a pillager patrol was waiting; four fights of 4 s and 5 hits each, health 19 to 7.5, and Voluntary Exile. The provisions rule has not been through a trip down yet. |
 
+| 12 (05:35) | Read 21 minutes alone (05:13 to 05:34): 50 steps, 2 failed, no damage taken, no deaths. Changed: better armour is put on over worse; the shield goes up against anything that shoots; a chest in the base, and `stash` puts what a trip does not need into it; iron armour is no longer wanted when diamond is worn; with the list done, by day it goes up and looks around. | Its best 21 minutes: sticks and wood packed before going down (the provisions rule's first trip), then an iron pickaxe, a diamond pickaxe, a diamond sword and four pieces of diamond armour between 05:24 and 05:34, and Cover Me with Diamonds. Then it stood still with the diamond armour in its pack and the iron set on. After the changes, within 2 minutes: "put on diamond_leggings, diamond_chestplate, diamond_helmet, diamond_boots"; a chest made and put in the base; "put in the chest: ... 1 iron_leggings, 1 iron_chestplate ... 1 iron_helmet, 1 iron_boots ..."; and a first `shield_up` at a skeleton 13 blocks off. No arrow has hit the shield yet. |
+
 Settled at 03:24, as far as it goes: the player's process was restarted and the first walk
 worked (`goto` into the base, 13 blocks, where the walk to the bed had just timed out after
 60 s). So the fault was in the old connection's state after eight respawns in 131 s, not in
 the world. What exactly was wrong in it is not known. `player.mjs` now drops the connection
 after three walks in a row that go nowhere, and reconnects. It fired 5 times the same hour, each time for the wrong reason (see turn 8).
 
-Next candidates: the shield is held and never raised (a skeleton's arrow on a raised shield is
-Not Today, Thank You, and skeletons have killed it twice); the 3 diamonds should become one
-pickaxe this time; nothing new has been earned since Diamonds! at 19:34 the day before.
+Next candidates, now that the first list is done: Hot Stuff (a bucket of lava; the bucket is
+carried, and lava is the one thing that would take the diamond armour for good, so the place
+to stand has to be chosen with care); Take Aim and Fishy Business (both need string, which
+means spiders); The Parrots and the Bats (the goal is in, and waits for two chickens).
 
 Earlier candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
 decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be
@@ -161,5 +165,4 @@ Each one is from the journal, with the turn it came from.
 - After a fight it stood at 7.5 health with 11 food and nothing to eat: food is hunted only when animals are in sight, and none is kept back.
 - `build_base` says "put down crafting_table" when the table was already there.
 - `brave` and `nightPass` in memory were set by hand during the race. The brain sets `nightPass` in two places; nothing sets `brave` unless the bed is in the pack.
-- Diamond armour is not put on over iron: `wear` only fills an empty place.
 - Nothing yet reads `notes.jsonl` without the session: `watch_notes.mjs` wakes the session when CT says something the player cannot answer.

@@ -206,6 +206,17 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     const tableIn = memory.base && !!memory.baseHas?.crafting_table;
     const furnished = memory.base && tableIn;
     const bedToPlace = bedHad && !memory.places?.bed;
+    // A chest for the base, once there is a room with a table in it. It is made at the surface
+    // or wherever the wood is, and put down the next time the player is home.
+    if (furnished && !bedToPlace && !memory.baseHas?.chest) {
+      if (!(have.chest > 0)) { const make = plan('chest', 1, world); return make?.stuck ? null : make; }
+      if (fromHome > 12 && world.night) return null;
+      if (fromHome > 12 && (Math.abs(here.y - memory.base.y) > 20 || fromHome > 80)) return null;   // it goes down when home is near
+      if (fromHome > 12) return { skill: 'goto', args: { x: home.x, z: home.z, range: 4 }, why: 'the chest goes in the base', timeout: 300 };
+      // From far below, up in legs first: a long climb asked for in one piece is not climbed (turn 11).
+      if (memory.base.y - here.y > 16) return open({ skill: 'surface', args: {}, why: 'up to the base with the chest', timeout: 600 });
+      return open({ skill: 'build_base', args: {}, why: 'the chest goes in the base', timeout: 240 });
+    }
     if (furnished && !bedToPlace) return null;
     if (!memory.base || !furnished) {
       const table = (have.crafting_table ?? 0) >= 1 ? null : plan('crafting_table', 1, world);
@@ -268,6 +279,16 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const shut = api.solid(new api.Vec3(b.x + 2, b.y, b.z)) || api.solid(new api.Vec3(b.x + 2, b.y + 1, b.z));
       return inside && shut ? open({ skill: 'leave_base', args: {}, why: 'the doorway was closed for the night', timeout: 60 }) : null;
     }],
+    // A chest in the base, and what is not needed on a trip put into it whenever the player is
+    // in the room: every death under ground so far took everything it had made.
+    ['stash', () => {
+      const chest = memory.baseHas?.chest;
+      const b = memory.base;
+      if (!chest || !b) return null;
+      const inside = Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2;
+      const spare = Object.entries(have).some(([name, n]) => /^(diamond|raw_iron|iron_ingot|ominous_bottle|white_banner|andesite|diorite|granite|tuff|cobbled_deepslate|gravel|leaf_litter|feather|egg)$/.test(name) || (name === 'cobblestone' && n > 96));
+      return inside && spare ? open({ skill: 'stash', args: { at: chest }, why: 'spares go in the chest before the next trip', timeout: 60 }) : null;
+    }],
     ['sword', tool('stone_sword')],
     ['stone pickaxe', tool('stone_pickaxe')],
     ['base', base],
@@ -295,12 +316,14 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       if ((have.wheat_seeds ?? 0) < 2) return plan('wheat_seeds', 2, world);
       return open({ skill: 'breed', args: { animal: 'chicken', food: 'wheat_seeds' }, why: 'two chickens in sight and seeds in the pack', timeout: 90 });
     }],
-    ['Suit Up', item('iron_chestplate')],
+    // Iron armour is wanted only where nothing as good or better is had: with the diamond set on
+    // and the iron set in the chest, it went back down for iron for a second iron chestplate (turn 12).
+    ['Suit Up', tool('iron_chestplate')],
     ['shield', item('shield')],
     ['iron sword', tool('iron_sword')],
-    ['leggings', item('iron_leggings')],
-    ['helmet', item('iron_helmet')],
-    ['boots', item('iron_boots')],
+    ['leggings', tool('iron_leggings')],
+    ['helmet', tool('iron_helmet')],
+    ['boots', tool('iron_boots')],
     ['bucket', () => (have.bucket || have.water_bucket || have.lava_bucket ? null : plan('bucket', 1, world))],
     // Turn 6: this asked for 3 of whichever it was after, so 9 diamonds became 3 pickaxes.
     ['Diamonds!', () => (hasTool(have, 'diamond_pickaxe') ? null : (have.diamond ?? 0) >= 3 ? plan('diamond_pickaxe', 1, world) : plan('diamond', 3, world))],
@@ -323,6 +346,19 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     step = tidy(step) ?? step;
     memory.thought = { at: new Date().toISOString(), goal, step: `${step.skill} ${JSON.stringify(step.args)}`, why: step.why, stuck };
     return { goal, ...step };
+  }
+  // Nothing left on the list (turn 12: full diamond armour on, and it stood still). By day:
+  // up to the surface and a look around, which is where animals to breed and new country are.
+  // Not further than 120 blocks from home, so that the bed can be reached by dusk.
+  if (!world.night) {
+    let step = null;
+    if (!world.exposed && world.y < world.surfaceY - 6) step = open({ skill: 'surface', args: {}, why: 'nothing left to do down here', timeout: 600 });
+    else if (home && fromHome > 120) step = { skill: 'goto', args: { x: home.x, z: home.z, range: 8 }, why: 'far enough from home', timeout: 300 };
+    else step = heading({ skill: 'explore', args: {}, why: 'nothing left on the list: a look around', timeout: 90 }, memory, world);
+    if (step) {
+      memory.thought = { at: new Date().toISOString(), goal: 'look around', step: `${step.skill} ${JSON.stringify(step.args)}`, why: step.why, stuck };
+      return { goal: 'look around', ...step };
+    }
   }
   memory.thought = { at: new Date().toISOString(), goal: null, step: null, stuck };
   return null;

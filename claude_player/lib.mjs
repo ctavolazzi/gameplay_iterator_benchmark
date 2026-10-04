@@ -511,13 +511,21 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, ate: food.name };
   }
 
-  // Armour and shield carried in the pack and not worn.
+  // Armour and shield carried in the pack that should be on: a place that is empty, or one
+  // holding something worse. Turn 12: a full set of diamond armour sat in the pack while the
+  // iron set was worn, because only empty places were filled.
   function unworn() {
-    return bot.inventory.items().filter((item) => {
+    const grade = (name) => { const at = GRADES.findIndex((g) => name.startsWith(g)); return at < 0 ? GRADES.length : at; };
+    const best = {};
+    for (const item of bot.inventory.items()) {
       const kind = /_(helmet|chestplate|leggings|boots)$/.exec(item.name)?.[1];
-      if (kind) return !bot.inventory.slots[bot.getEquipmentDestSlot(ARMOUR[kind])];
-      return item.name === 'shield' && !bot.inventory.slots[45];
-    });
+      if (!kind) continue;
+      const worn = bot.inventory.slots[bot.getEquipmentDestSlot(ARMOUR[kind])];
+      if (worn && grade(worn.name) <= grade(item.name)) continue;
+      if (!best[kind] || grade(item.name) < grade(best[kind].name)) best[kind] = item;
+    }
+    const shield = !bot.inventory.slots[45] && bot.inventory.items().find((item) => item.name === 'shield');
+    return [...Object.values(best), ...(shield ? [shield] : [])];
   }
 
   async function wear() {
@@ -563,6 +571,39 @@ export function make(bot, signal, memory = {}) {
     await walk(new goals.GoalNear(last.x, last.y, last.z, 0), 8000, 'reaching what it dropped').catch(() => {});
     await pickUp(8, 4);
     return { ok: true, hits, gained: diffCarried(before, carried()).gained };
+  }
+
+  // Put what is not needed on a trip into the chest in the base, so that a death does not take
+  // it. Kept on the player: the best pickaxe and sword, one spare pickaxe, food, sticks, wood,
+  // torches, buckets, a table, a furnace, a stack of cobblestone. Everything else goes in.
+  async function stash(chestAt) {
+    const block = bot.blockAt(new Vec3(chestAt.x, chestAt.y, chestAt.z));
+    if (block?.name !== 'chest') return { ok: false, error: 'no chest there' };
+    await walk(new goals.GoalNear(chestAt.x, chestAt.y, chestAt.z, 2), 30000, 'walking to the chest');
+    const keepOne = new Set([bestOf('_pickaxe')?.name, bestOf('_sword')?.name, bestOf('_axe')?.name, 'iron_pickaxe', 'crafting_table', 'furnace', 'shield'].filter(Boolean));
+    const keepAll = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed)$/;
+    const chest = await within(bot.openContainer(block), 8000, 'opening the chest');
+    const put = {};
+    try {
+      const seen = {};
+      for (const item of bot.inventory.items()) {
+        check();
+        let count = item.count;
+        if (keepAll.test(item.name) || /_(helmet|chestplate|leggings|boots)$/.test(item.name) && !put[item.name] && false) continue;
+        if (keepOne.has(item.name) && !seen[item.name]) { seen[item.name] = true; count -= 1; }
+        if (item.name === 'cobblestone') { const kept = seen.cobble ?? 0; const keep = Math.max(0, Math.min(count, 64 - kept)); seen.cobble = kept + keep; count -= keep; }
+        if (count <= 0) continue;
+        try {
+          await within(chest.deposit(item.type, null, count), 5000, `putting ${item.name} in the chest`);
+          put[item.name] = (put[item.name] ?? 0) + count;
+        } catch (error) {
+          if (/full|no space/i.test(error.message)) break;
+        }
+      }
+    } finally {
+      chest.close();
+    }
+    return { ok: true, put };
   }
 
   // Feed two animals that stand near each other, so that they breed. The proof that it worked
@@ -825,7 +866,7 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, at: round(bed.position), time, upAt: bot.time.timeOfDay };
   }
 
-  return { bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
 }

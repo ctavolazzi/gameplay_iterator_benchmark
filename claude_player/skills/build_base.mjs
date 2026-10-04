@@ -36,7 +36,7 @@ export default async function buildBase({ bot, api, memory, note }) {
   }
 
   const put = [];
-  const spots = { crafting_table: c.offset(-1, 0, -1), furnace: c.offset(1, 0, -1), torch: c.offset(0, 0, -1) };
+  const spots = { crafting_table: c.offset(-1, 0, -1), furnace: c.offset(1, 0, -1), torch: c.offset(0, 0, -1), chest: c.offset(-1, 0, 0) };
   for (const [item, cell] of Object.entries(spots)) {
     if (!api.carried()[item]) continue;
     const placed = await api.placeAt(item, cell);

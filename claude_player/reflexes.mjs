@@ -167,6 +167,25 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
     return;
   }
 
+  // The shield goes up against anything that shoots, while it is too far off to hit. The first
+  // 21 deaths had a shield in the other hand for several of them and it was never raised once.
+  // An arrow on a raised shield is also the game's Not Today, Thank You.
+  const shielded = bot.inventory.slots[45]?.name === 'shield';
+  const archer = shielded ? bot.nearestEntity((e) => /^(skeleton|stray|bogged|pillager)$/.test(e.name) && e.position.distanceTo(me) < 14) : null;
+  const archerFar = archer ? archer.position.distanceTo(me) : 0;
+  if (archer && archerFar > 3.4 && !state.fight && await api.canSee(archer)) {
+    await bot.lookAt(archer.position.offset(0, (archer.height ?? 1.9) * 0.8, 0), true);
+    if (!state.blocking) {
+      bot.activateItem(true);
+      state.blocking = now;
+      if (state.blockedFor !== archer.id) event('shield_up', { foe: archer.name, distance: +archerFar.toFixed(1), health });
+      state.blockedFor = archer.id;
+    }
+  } else if (state.blocking) {
+    bot.deactivateItem();
+    state.blocking = 0;
+  }
+
   // Fight what comes close and can be seen. The skill stops; nothing new starts until it is over.
   let target = state.fight ? bot.entities[state.fight.id] : null;
   if (!target && armed && foe && !creeper && (distance < 2.5 || (distance < 6 && await api.canSee(foe)))) target = foe;
@@ -181,6 +200,7 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
     const reach = target.position.distanceTo(bot.entity.position);
     if (reach > 3) bot.pathfinder.setGoal(new api.goals.GoalFollow(target, 2), true);
     if (reach <= 3.4 && now - (state.lastHit ?? 0) > 600) {
+      if (state.blocking) { bot.deactivateItem(); state.blocking = 0; }
       await bot.lookAt(target.position.offset(0, (target.height ?? 1.8) * 0.6, 0), true);
       bot.attack(target);
       state.fight.hits += 1;
