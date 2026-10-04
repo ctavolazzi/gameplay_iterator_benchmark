@@ -13,6 +13,8 @@
 //   node claude_player/player.mjs plan '[{"skill":"craft","args":{"item":"planks"}}]'
 //   node claude_player/player.mjs wait 240         until idle or 240 s, then what happened
 //   node claude_player/player.mjs events 20 | summary | stop | say hello | quit
+//   node claude_player/player.mjs look [north|around|<player>|<creature>|<block>|x y z] [--open]
+//                                                  a picture from the player's own eyes (eyes.mjs)
 
 import http from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -75,6 +77,11 @@ async function serve(gamePort, startAuto) {
   let stalls = 0;          // walks in a row that went nowhere
   let lastReconnect = 0;
   const reflexState = { holdUntil: 0 };
+  const say = (text, to = null) => {
+    const line = String(text).slice(0, 240);
+    bot.chat(line);
+    event('said', { text: line, to });
+  };
 
   const carried = () => {
     const out = {};
@@ -133,12 +140,26 @@ async function serve(gamePort, startAuto) {
       }
       lastHealth = b.health;
     });
-    b.on('message', (message) => {
-      const title = parseAdvancement(message.toString(), NAME);
-      if (!title || earned[title]) return;
-      earned[title] = new Date().toISOString();
-      writeFileSync(EARNED, JSON.stringify(earned, null, 1));
-      event('advancement', { name: title, doing: current?.name ?? null });
+    b.on('message', async (message, position) => {
+      const text = message.toString();
+      const title = parseAdvancement(text, NAME);
+      if (title && !earned[title]) {
+        earned[title] = new Date().toISOString();
+        writeFileSync(EARNED, JSON.stringify(earned, null, 1));
+        event('advancement', { name: title, doing: current?.name ?? null });
+      }
+      // What the game itself says, not a player, goes to chat.mjs as well: how many are in a
+      // bed, and every player's advancements and deaths.
+      if (position === 'chat' || !ready) return;
+      try {
+        const chat = await fresh('chat.mjs');
+        if (!chat.overheard) return;
+        await chat.overheard({ bot: b, memory, text, position, status: status(), event,
+          say: (line) => say(line, 'everyone'), stop: () => stopAll('the game asked') });
+        saveMemory();
+      } catch (error) {
+        problem('chat_error', error);
+      }
     });
     // Everything said in chat is journalled, and chat.mjs decides what to say back.
     b.on('chat', async (username, message) => {
@@ -147,7 +168,7 @@ async function serve(gamePort, startAuto) {
       try {
         const chat = await fresh('chat.mjs');
         await chat.heard({ bot: b, memory, username, message, status: status(), event,
-          say: (text) => { b.chat(String(text).slice(0, 240)); event('said', { text: String(text).slice(0, 240), to: username }); },
+          say: (text) => say(text, username),
           stop: () => stopAll(`${username} asked`) });
         saveMemory();
       } catch (error) {
@@ -299,7 +320,7 @@ async function serve(gamePort, startAuto) {
     if (action === 'events') return { ok: true, events: recent.filter((row) => row.n > (args.since ?? 0)).slice(-(args.last ?? 30)) };
     if (action === 'stop') return stopAll('asked to stop');
     if (action === 'auto') { auto = !!args.on; if (!auto) stopAll('asked to stop'); return { ok: true, auto }; }
-    if (action === 'say') { bot.chat(String(args.text ?? '').slice(0, 200)); return { ok: true }; }
+    if (action === 'say') { say(String(args.text ?? '').slice(0, 240), 'from the session'); return { ok: true }; }
     if (action === 'quit') { quitting = true; stopAll('quitting'); bot.quit(); return { ok: true }; }
     if (action === 'run' || action === 'plan') {
       const steps = action === 'run' ? [{ skill: args.skill, args: args.args, timeout: args.timeout }] : args.steps;
@@ -309,6 +330,14 @@ async function serve(gamePort, startAuto) {
       if (!ready) throw new Error('the player is not in the world yet');
       queue.push(...steps);
       return { ok: true, queued: steps.length, waiting: queue.length, eventCount: seq };
+    }
+    // Anything else is looked for in actions.mjs, which can be changed while the player plays.
+    if (existsSync(join(HERE, 'actions.mjs'))) {
+      const actions = await fresh('actions.mjs');
+      if (typeof actions[action] === 'function') {
+        if (!ready) throw new Error('the player is not in the world yet');
+        return actions[action]({ bot, memory, status, event, fresh, say, stop: stopAll, saveMemory, earned: () => Object.keys(earned) }, args);
+      }
     }
     throw new Error(`no action called ${action}`);
   }
@@ -344,11 +373,11 @@ async function serve(gamePort, startAuto) {
   drive();
 }
 
-async function send(action, args = {}) {
+async function send(action, args = {}, seconds = 10) {
   const { port, token } = JSON.parse(readFileSync(CONTROL, 'utf8'));
   const response = await fetch(`http://127.0.0.1:${port}/command`, { method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ action, args }), signal: AbortSignal.timeout(10000) });
+    body: JSON.stringify({ action, args }), signal: AbortSignal.timeout(seconds * 1000) });
   return response.json();
 }
 
@@ -385,8 +414,31 @@ async function main() {
     const { doing, waiting, where, health, food, carried, thought, earned, deaths } = state;
     return console.log(JSON.stringify({ doing, waiting, where, health, food, carried, thought, earned, deaths }));
   }
+  if (action === 'look') {
+    // The game's own textures are read from the installed game the first time (a few seconds).
+    const textures = await import('./textures.mjs');
+    if (!existsSync(join(textures.CACHE, 'index.json')) && textures.findJar()) {
+      const { execFileSync } = await import('node:child_process');
+      execFileSync(process.execPath, [join(HERE, 'textures.mjs')], { stdio: 'inherit' });
+    }
+    const valued = new Set(['--far', '--width', '--height', '--tag']);
+    const words = rest.filter((word, i) => !word.startsWith('--') && !valued.has(rest[i - 1]));
+    const flag = (name) => { const at = rest.indexOf(`--${name}`); return at >= 0 ? rest[at + 1] : undefined; };
+    const numbers = words.map(Number);
+    const args = { ...(words[0]?.startsWith('{') ? JSON.parse(words[0]) : words[0] === 'around' ? { around: true }
+      : numbers.length === 3 && numbers.every(Number.isFinite) ? { at: { x: numbers[0], y: numbers[1], z: numbers[2] } } : words[0] ? { at: words.join('_') } : {}),
+      ...(flag('far') && { far: Number(flag('far')) }), ...(flag('width') && { width: Number(flag('width')) }), ...(flag('height') && { height: Number(flag('height')) }),
+      ...(flag('tag') && { tag: flag('tag') }), ...(rest.includes('--plain') && { plain: true }), ...(rest.includes('--still') && { turn: false }) };
+    const seen = await send('look', args, 120);
+    if (seen.ok === false) { console.error(seen.error); process.exitCode = 1; return; }
+    const { told, seen: creatures, ...short } = seen;
+    console.log(JSON.stringify({ ...short, seen: creatures, told: rest.includes('--all') ? told : undefined }, null, 1));
+    if (rest.includes('--open')) (await import('node:child_process')).spawn('open', [seen.file], { detached: true, stdio: 'ignore' }).unref();
+    return;
+  }
   let args = {};
   if (action === 'say') args = { text: rest.join(' ') };
+  else if (rest[0]?.startsWith('{')) args = JSON.parse(rest[0]);
   else if (action === 'auto') args = { on: rest[0] !== 'off' };
   else if (action === 'run') args = { skill: rest[0], args: rest[1] ? JSON.parse(rest[1]) : {}, timeout: rest[2] && Number(rest[2]) };
   else if (action === 'plan') args = { steps: JSON.parse(rest[0]) };
