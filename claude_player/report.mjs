@@ -18,7 +18,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 // What happened in a stretch of the journal, with what needs a decision ranked first: what
 // matters most before what is newest. rows are journal rows; status is the player's now.
-export function digest(rows, { from, to, status = null, asks = [], score = null } = {}) {
+export function digest(rows, { from, to, status = null, asks = [], score = null, curriculum = null } = {}) {
   const skills = rows.filter((row) => row.kind === 'skill');
   const of = (kind) => rows.filter((row) => row.kind === kind);
   const seconds = Math.max(1, Math.round((to - from) / 1000));
@@ -49,12 +49,17 @@ export function digest(rows, { from, to, status = null, asks = [], score = null 
   for (const [goal, why] of Object.entries(status?.thought?.stuck ?? {})) decide.push(`Goal "${goal}" is stuck: ${why}`);
   if (still > seconds * 0.25 && seconds > 120) decide.push(`Stood still for ${still} s of ${seconds} s. Nothing happening is a fault too.`);
   if (status && !status.ready) decide.push('The player is not in the world.');
+  // The curriculum's requests: the nearest advancements that are open and that the program
+  // cannot earn as it is. This is where the player asks for new code.
+  for (const ask of (curriculum?.requests ?? []).slice(0, 2)) {
+    decide.push(`The curriculum asks for a way to "${ask.title}" (${ask.asks}). ${ask.status === 'waiting' ? 'It has one that cannot be taken now' : 'Nothing in the program does this'}: ${ask.why}.${ask.would ? ` It would take: ${ask.would}.` : ''}`);
+  }
   for (const ask of asks.filter((a) => !a.done)) decide.push(`Asked for and not done (${ask.who}, ${ask.when}): "${ask.words}"`);
 
   return { from: new Date(from).toISOString(), to: new Date(to).toISOString(), seconds, steps: skills.length, failed: skills.filter((row) => !row.ok).length,
     busy, still, byGoal, failures, deaths: deaths.length, damage: +of('damage').reduce((sum, row) => sum + Math.max(0, (row.from ?? 0) - (row.to ?? 0)), 0).toFixed(1),
     fights: of('fight').length, advancements: of('advancement').map((row) => row.name), reconnects: of('login').length, said: of('said').length,
-    heard: of('chat').length, looks: of('looked').length, score, decide };
+    heard: of('chat').length, looks: of('looked').length, score, curriculum, decide };
 }
 
 // The report as it is read: markdown, the decisions first.
@@ -65,6 +70,7 @@ export function page(d, { status = null, look = null } = {}) {
     `- ${plural(d.deaths, 'death')}, ${d.damage} health lost, ${plural(d.fights, 'fight')}, ${plural(d.reconnects, 'login')}`,
     `- earned: ${d.advancements.join(', ') || 'nothing'}`, `- chat: heard ${d.heard}, said ${d.said}; looks taken: ${d.looks}`);
   if (d.score) lines.push(`- ${d.score}`);
+  if (d.curriculum) lines.push(`- curriculum: ${d.curriculum.earned} of ${d.curriculum.total} advancements earned; open: ${d.curriculum.ready} with a way, ${d.curriculum.waiting} waiting, ${d.curriculum.noWay} with no way; next: ${d.curriculum.next ?? 'nothing the planner can start on now'}`);
   lines.push('', '| Goal | Steps | Failed | Seconds |', '| --- | --- | --- | --- |',
     ...Object.entries(d.byGoal).sort((a, b) => b[1].seconds - a[1].seconds).map(([goal, g]) => `| ${goal} | ${g.steps} | ${g.failed} | ${g.seconds} |`), '');
   const failures = Object.entries(d.failures).sort((a, b) => b[1] - a[1]);
@@ -94,8 +100,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let score = null;
   try { const s = await import('./score.mjs'); score = s.line(s.read()); } catch { /* no log to read */ }
   const asks = existsSync(join(HERE, 'asks.json')) ? JSON.parse(readFileSync(join(HERE, 'asks.json'), 'utf8')) : [];
+  // Where the player stands in the game's tree: as it worked it out itself with its planner in
+  // the last ten minutes, or failing that from the server's log alone.
+  let curriculum = ask('memory')?.memory?.curriculum ?? null;
+  if (!curriculum || to - curriculum.at > 600000) {
+    try {
+      const c = await import('./curriculum.mjs');
+      curriculum = c.summary(c.survey((await import('./advancements.mjs')).load(), (await import('./score.mjs')).earnedBy('Claude')));
+    } catch { curriculum = null; }
+  }
   const look = status?.ready && !argv.includes('--no-look') ? ask('look', '{"around":true,"tag":"report"}') : null;
-  const text = page(digest(rows, { from, to, status, asks, score }), { status, look });
+  const text = page(digest(rows, { from, to, status, asks, score, curriculum }), { status, look });
   mkdirSync(join(DATA, 'reports'), { recursive: true });
   const file = join(DATA, 'reports', `${new Date(to - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace(/[:T]/g, '-')}.md`);
   writeFileSync(file, text);

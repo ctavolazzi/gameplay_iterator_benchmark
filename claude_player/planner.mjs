@@ -35,6 +35,9 @@ export const SOURCES = {
   sand: { blocks: ['sand'], surface: true },
   gravel: { blocks: ['gravel'] },
   wheat_seeds: { skill: 'gather_seeds', sees: 'short_grass', surface: true },
+  // A bucket filled where the liquid lies open with ground beside it. Lava lies in the deep caves.
+  water_bucket: { fill: 'water' },
+  lava_bucket: { fill: 'lava', deeper: -50 },
   beef: { hunt: 'cow' }, leather: { hunt: 'cow' }, porkchop: { hunt: 'pig' },
   mutton: { hunt: 'sheep' }, chicken: { hunt: 'chicken' }, feather: { hunt: 'chicken' },
 };
@@ -118,6 +121,18 @@ function need(item, count, w, trail) {
         if (down) return down;
       }
       if (w.night && w.exposed) return { stuck: `${item} waits for morning` };
+      return explore();
+    }
+    if (source.fill) {
+      if (!((w.have.bucket ?? 0) > 0)) return need('bucket', 1, w, chain) ?? { stuck: 'no bucket' };
+      // Lava keeps what falls into it. Diamonds are made into gear or put away first.
+      if (source.fill === 'lava' && (w.have.diamond ?? 0) > 0) return { stuck: 'the diamonds carried are made into gear or put away before going near lava' };
+      if (w.liquid?.(source.fill)) return open(step('fill_bucket', { liquid: source.fill }, 150)) ?? { stuck: `filling the bucket with ${source.fill} keeps failing` };
+      if (source.deeper !== undefined && w.y > source.deeper + 8) {
+        const down = open(step('descend', { toY: Math.max(source.deeper, Math.floor(w.y) - 24) }, 300));
+        if (down) return down;
+      }
+      if (source.deeper === undefined) { const up = onTheSurface(item); if (up) return up; }
       return explore();
     }
     const wait = onTheSurface(item);

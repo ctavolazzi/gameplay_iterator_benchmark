@@ -38,6 +38,10 @@ function recipesOf(bot, name) {
 
 export async function think({ bot, api, observe, memory, earned, fresh }) {
   const { plan, hasTool, signature, leaves } = await fresh('planner.mjs');
+  // The game's advancements and the curriculum over them. Without the list (no server jar to
+  // read it from) the player plays on from its own list of goals.
+  let curriculum = null, advancements = null;
+  try { curriculum = await fresh('curriculum.mjs'); advancements = (await fresh('advancements.mjs')).load(); } catch { curriculum = null; }
   const now = Date.now();
   const seen = observe();
   const have = api.have();
@@ -82,8 +86,11 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       return held ? null : step;
     }
   }
-  // In its bed with the night going on, nothing else is started: it stays, whoever asked.
-  if (bot.isSleeping && bot.time.timeOfDay >= 12541 && bot.time.timeOfDay < 23400) {
+  // In its bed with the night going on, and asked to be there or with someone else in a bed
+  // too, nothing else is started: it stays. Told to resume, or alone in bed with nobody
+  // waiting, it gets up for the next thing on its list (the first walk leaves the bed).
+  const waiting = memory.sleepers && now - memory.sleepers.at < 180000 ? memory.sleepers.asleep - 1 : 0;
+  if (bot.isSleeping && bot.time.timeOfDay >= 12541 && bot.time.timeOfDay < 23400 && (memory.order?.kind === 'bed' || waiting > 0)) {
     memory.thought = { at: new Date().toISOString(), goal: 'sleep', step: 'sleep', why: 'in bed, and the night is not over', stuck: {} };
     return { skill: 'sleep', args: { stay: true }, why: 'in bed, and the night is not over', goal: 'sleep', timeout: Math.min(900, Math.round((23460 - bot.time.timeOfDay) / 20) + 40), pass: { night: true } };
   }
@@ -115,6 +122,7 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     wood: workingWood(have, seen),
     recipes: (name) => recipesOf(bot, name),
     sees: (block) => (sight[block] ??= !!api.reachable(block)),
+    liquid: (kind) => (sight[`still ${kind}`] ??= !!api.liquidNear(kind)),
     creatures: seen.creatures.map((c) => c.name),
     near: { crafting_table: !!api.tableNear(24), furnace: !!api.nearest('furnace', 24) },
     tableKnown: (() => {
@@ -152,7 +160,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       return plan(RAW[raw], (have[RAW[raw]] ?? 0) + Math.min(have[raw], 8), world);
     }
     if (foodCarried >= 6 || world.night) return null;
-    const animal = ANIMALS.find((name) => world.creatures.includes(name));
+    // Chickens are left alone while they are wanted for breeding: the hunt for food had been
+    // eating the only two in sight before the breeding goal, lower down the list, was reached.
+    const chicks = !earned.includes('The Parrots and the Bats') && (have.wheat_seeds ?? 0) >= 2;
+    const animal = ANIMALS.find((name) => world.creatures.includes(name) && !(chicks && name === 'chicken'));
     if (animal && hasTool(have, 'wooden_sword')) return open({ skill: 'hunt', args: { animal }, why: `food: ${foodCarried} carried`, timeout: 60 });
     return null;
   }
@@ -202,6 +213,8 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     if (!at || Math.hypot(here.x - at.x, here.y - at.y, here.z - at.z) > 8) memory.spawnBed = false;
   }
   const bedTime = time >= 12541 && time < 23300;
+  // The people in the game: every player that is not this one and not a program's.
+  const people = Object.keys(bot.players ?? {}).filter((name) => name !== bot.username && !/codex|bot$/i.test(name));
 
   function bed() {
     if (bedHad || memory.places?.bed) return null;
@@ -391,17 +404,17 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       if (wood < 8) return plan(`${world.wood}_log`, count('_log') + 2, world);
       return plan('stick', 4, world);
     }],
-    ['food', food],
-    ['A Seedy Place', seedy],
-    ['iron pickaxe', tool('iron_pickaxe')],
     // The Parrots and the Bats: breed two animals. Chickens take seeds, and both are close to
-    // hand. Only when two chickens are in sight; it is not worth a search.
+    // hand. Only when two chickens are in sight; it is not worth a search. Before food: see food().
     ['The Parrots and the Bats', () => {
       if (earned.includes('The Parrots and the Bats') || world.night) return null;
       if (world.creatures.filter((name) => name === 'chicken').length < 2) return null;
       if ((have.wheat_seeds ?? 0) < 2) return plan('wheat_seeds', 2, world);
       return open({ skill: 'breed', args: { animal: 'chicken', food: 'wheat_seeds' }, why: 'two chickens in sight and seeds in the pack', timeout: 90 });
     }],
+    ['food', food],
+    ['A Seedy Place', seedy],
+    ['iron pickaxe', tool('iron_pickaxe')],
     // Iron armour is wanted only where nothing as good or better is had: with the diamond set on
     // and the iron set in the chest, it went back down for iron for a second iron chestplate (turn 12).
     ['Suit Up', tool('iron_chestplate')],
@@ -420,6 +433,24 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['diamond leggings', item('diamond_leggings')],
     ['diamond helmet', item('diamond_helmet')],
     ['diamond boots', item('diamond_boots')],
+    // The curriculum (curriculum.mjs, and RESEARCH.md for where the idea is from): the game's
+    // own list of advancements, surveyed for what is open and what the planner has a step for
+    // now. The first such step is taken. What is open with no way is kept in memory for the
+    // report: it is what the session is asked to write next.
+    ['curriculum', () => {
+      if (!curriculum) return null;
+      // No trip is begun in the late afternoon (it started down for lava at 16:20 by the game's
+      // clock and "home by dusk" called it back up 20 s later), nor at night with a person in
+      // the game: the night's work then stays in reach of the bed.
+      if ((memory.places?.bed && time >= 10000 && time < 12600) || (world.night && people.length)) {
+        memory.curriculum = { ...(memory.curriculum ?? {}), held: 'no trips late in the day, or at night with a person in the game' };
+        return null;
+      }
+      const rows = curriculum.survey(advancements, earned, { have, plan: (item) => plan(item, 1, world) });
+      memory.curriculum = { at: now, ...curriculum.summary(rows) };
+      const first = curriculum.next(rows);
+      return first ? { ...first.step, why: `${first.title}: ${first.step.why ?? first.item}` } : null;
+    }],
     // fogsift, 07:38 on 2026-10-04: "prepare to get some crops going". A hoe, seeds, and a plot
     // of wheat beside water, by day and near home, when everything above is done. The plot is
     // looked at again every ten minutes for wheat that is ripe.
@@ -442,7 +473,6 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     // player was 113 blocks down after diamonds, and it told him it would stay in reach.
     ['mining', () => {
       if (!world.night) return null;
-      const people = Object.keys(bot.players ?? {}).filter((name) => name !== bot.username && !/codex|bot$/i.test(name));
       if (!people.length || !memory.places?.bed) return plan('diamond', (have.diamond ?? 0) + 3, world);
       const coal = plan('coal', (have.coal ?? 0) + 8, world);
       return coal && !coal.stuck ? coal : plan('raw_iron', (have.raw_iron ?? 0) + 3, world);

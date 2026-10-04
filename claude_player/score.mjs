@@ -102,6 +102,20 @@ export function read() {
   return { challenge, since, score: tally(rows, { players: challenge.players, since }) };
 }
 
+// Every advancement the server's logs say a player has earned, in any of them: the titles.
+export function earnedBy(player, aliases = {}) {
+  const titles = new Set();
+  for (const name of existsSync(LOGS) ? readdirSync(LOGS).sort() : []) {
+    const path = new URL(name, LOGS);
+    const text = name.endsWith('.gz') ? gunzipSync(readFileSync(path)).toString('utf8') : name.endsWith('.log') ? readFileSync(path, 'utf8') : '';
+    for (const line of text.split('\n')) {
+      const row = parseLine(line, [player], aliases);
+      if (row?.kind === 'advancement') titles.add(row.what);
+    }
+  }
+  return [...titles];
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = read();
   console.log(line(result));

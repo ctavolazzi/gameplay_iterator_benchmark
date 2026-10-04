@@ -73,7 +73,14 @@ export function bedTrip(from, bedAt, hour) {
 // Asked to sleep, by a person or by the game's count of sleepers. Sets the order the brain
 // follows, and says what is true: on 2026-10-04 it said "Going to bed." three times from 113
 // blocks under its bed, and reached the surface after sunrise each time.
-function toBed({ bot, memory, who, stop }) {
+// Told to get up or to carry on, it does not go back to its bed by itself that night: only
+// when it is called again. (Left to itself it would walk back and say its three lines.)
+export function noBedTonight(bot, memory) {
+  const hour = bot.time?.timeOfDay ?? 0;
+  if (hour >= 12300 && hour < 23460) memory.noBedUntil = Date.now() + ((23460 - hour) / 20) * 1000;
+}
+
+export function toBed({ bot, memory, who, stop }) {
   const bedAt = memory.places?.bed;
   const hour = bot.time?.timeOfDay ?? 0;
   if (bot.isSleeping) return 'I am in my bed already.';
@@ -142,7 +149,7 @@ export async function heard({ bot, memory, username, message, status, event, say
   let answer;
   if (asked === 'morning') {
     if (memory.order?.kind === 'bed') delete memory.order;
-    if (status.doing?.skill === 'sleep') stop();
+    if (status.doing?.skill === 'sleep') { stop(); noBedTonight(bot, memory); }
     answer = `Good morning, ${username}. I am ${doing}.`;
   } else if (asked === 'bed') {
     // Every player has to be in a bed for the night to pass (the world's rule since 06:40 on
@@ -163,6 +170,7 @@ export async function heard({ bot, memory, username, message, status, event, say
   } else if (asked === 'resume') {
     // Said to a player that is following or lying in its bed, it ends that too.
     if (['follow', 'sleep'].includes(status.doing?.skill)) stop();
+    if (status.doing?.skill === 'sleep' || memory.order?.kind === 'bed') noBedTonight(bot, memory);
     delete memory.order;
     answer = `Carrying on: ${doing}.`;
   } else if (asked === 'come') {

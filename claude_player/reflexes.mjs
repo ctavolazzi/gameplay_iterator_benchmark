@@ -85,7 +85,12 @@ export function decide(s, st) {
 
   // 3 run. A pass for being brave covers everything but creepers: it was once set to get the
   // player past zombies to its dropped things, and it walked it up to a creeper instead.
-  const mustRun = foe && ((creeper && foe.distance < R.creeper) || (!pass.brave && !s.armed && foe.distance < R.runFrom));
+  const threat = foe && ((creeper && foe.distance < R.creeper) || (!pass.brave && !s.armed && foe.distance < R.runFrom));
+  // With nowhere to run, what cannot be seen is behind a wall and is left alone: in its closed
+  // base at 09:48 on 2026-10-04 a creeper outside the wall got it out of bed to "fight" twice
+  // without a hit, and the base was marked as a place to keep away from.
+  const walled = !!(threat && s.cornered && !foe.visible);
+  const mustRun = threat && !walled;
   // With nowhere to run and a weapon in hand it does not run at the walls: it fights, a creeper too.
   const stand = !!(mustRun && s.cornered && s.armed);
   let running = st.fleeing ?? 0;
@@ -253,7 +258,7 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt, ma
   for (const [kind, detail] of d.events) event(kind, detail);
   if (d.interrupt) interrupt(d.interrupt);
   if (d.hold) state.holdUntil = Math.max(state.holdUntil ?? 0, now + d.hold);
-  if (d.danger && !api.dangerous(me)) (memory.danger ??= []).push({ ...api.round(me), r: d.danger.r, until: now + 3600000, why: d.danger.why });
+  if (d.danger && !api.dangerous(me) && !api.inBase(me)) (memory.danger ??= []).push({ ...api.round(me), r: d.danger.r, until: now + 3600000, why: d.danger.why });
   if (d.flags.rememberHome) memory.home ??= api.round(me.offset(0, 3, 0));
   if (d.flags.clearGoal) bot.pathfinder.setGoal(null);
   if (d.flags.stopSwimming) bot.setControlState('jump', false);

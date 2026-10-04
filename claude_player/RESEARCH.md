@@ -47,8 +47,21 @@ What it takes from them:
   change: steps and how many failed, seconds by goal, seconds standing still, deaths,
   advancements, and the score. A change that does not move them was not an improvement.
 - **The curriculum is the brain's goal list, and what failed is kept.** A step that fails
-  is left alone for a while and tried again later (`memory.blocked`). Still to do: the
-  list of advancements not yet earned, with what each needs, as data the brain reads.
+  is left alone for a while and tried again later (`memory.blocked`).
+- **Built from this, on 2026-10-04: the curriculum** (`curriculum.mjs`, `advancements.mjs`).
+  Voyager's curriculum is a model asked for "the next task" given the player's state and
+  what it has done and failed, with the rule that it "should not be too hard". Here the
+  game's own tree does the proposing. Its 125 advancements are read out of the server's jar,
+  each with what it asks for and the one it comes after. One is open when the one before it
+  is earned. For an open one the program either has a way (a goal the brain already has, or
+  an item the planner can be asked for) or it has none. The brain takes the first open one
+  the planner has a step for now. What is open with no way is the list of requests to the
+  session, nearest first, and the report puts the first two under "To decide". So a new
+  skill, or one line telling the planner where a thing comes from, is picked up with no
+  change to the brain: `fill_bucket` and a line for `lava_bucket` went in, and at 09:43 the
+  player started down for lava "for Hot Stuff" by itself. Two things Voyager's own code does
+  that were already here: the first task is fixed (a log), and a full pack is dealt with
+  before anything else (it uses a chest when 33 of 36 places are taken).
 
 ## A long job across many sessions
 

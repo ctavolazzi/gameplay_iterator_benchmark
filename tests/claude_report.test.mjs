@@ -78,3 +78,15 @@ test('the watcher wakes the session when one step has failed six times the same 
   await ended;
   assert.match(said, /failed 6 times the same way: surface \{\}: climbed N blocks to N, still under ground/);
 });
+
+test('the curriculum\'s nearest requests are put to the session in the report', () => {
+  const curriculum = { total: 120, earned: 12, ready: 1, waiting: 3, noWay: 36, next: null, requests: [
+    { title: 'Hot Stuff', id: 'story/lava_bucket', asks: 'Fill a Bucket with lava', status: 'waiting', why: 'lava_bucket: no bucket', would: 'the bucket filled at lava that lies open' },
+    { title: 'Fishy Business', id: 'husbandry/fishy_business', asks: 'Catch a fish', status: 'no way', why: 'fishing_rod_hooked: nothing in the program does this', would: null },
+    { title: 'Take Aim', id: 'adventure/shoot_arrow', asks: 'Shoot something with an Arrow', status: 'no way', why: 'x', would: null }] };
+  const d = digest([], { from: START, to: START + 60000, status: { ready: true }, curriculum });
+  assert.equal(d.decide.length, 2);                   // the two nearest, not the whole list
+  assert.match(d.decide[0], /^The curriculum asks for a way to "Hot Stuff" \(Fill a Bucket with lava\)\. It has one that cannot be taken now: lava_bucket: no bucket\. It would take: the bucket filled/);
+  assert.match(d.decide[1], /"Fishy Business".*Nothing in the program does this/);
+  assert.match(page(d), /curriculum: 12 of 120 advancements earned; open: 1 with a way, 3 waiting, 36 with no way; next: nothing the planner can start on now/);
+});

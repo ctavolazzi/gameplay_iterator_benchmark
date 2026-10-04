@@ -897,6 +897,49 @@ export function make(bot, signal, memory = {}) {
       : { ok: false, error: lastError ?? `nothing to do at the plot by ${at.x} ${at.y} ${at.z}: ${plots.length} places, ${growing} growing, ${carried().wheat_seeds ?? 0} seeds` };
   }
 
+  // Still water or lava that lies open to the air, with a block of ground beside it to stand
+  // on: { at, bank }, the nearest, or null. For lava the ground must have no lava against it
+  // but the block being filled from, and none over it.
+  function liquidNear(liquid, reach = 32) {
+    const id = bot.registry.blocksByName[liquid]?.id;
+    if (id === undefined) return null;
+    const from = bot.entity.position;
+    const still = (at) => Number(bot.blockAt(at)?.getProperties?.().level ?? 1) === 0;
+    const spots = bot.findBlocks({ matching: id, maxDistance: reach, count: 300 })
+      .filter((at) => still(at) && nameAt(at.offset(0, 1, 0)) === 'air' && !crowded(at) && !inBase(at))
+      .sort((a, b) => a.distanceTo(from) - b.distanceTo(from));
+    for (const at of spots.slice(0, 40)) {
+      const bank = SIDES.map(([dx, dz]) => at.offset(dx, 0, dz)).find((side) => {
+        if (!solid(side) || solid(side.offset(0, 1, 0)) || solid(side.offset(0, 2, 0))) return false;
+        if (liquid !== 'lava') return true;
+        const others = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1]]
+          .map(([dx, dy, dz]) => side.offset(dx, dy, dz)).filter((near) => !same(near, at) && /lava|fire/.test(nameAt(near) ?? ''));
+        return others.length === 0;
+      });
+      if (bank) return { at, bank };
+    }
+    return null;
+  }
+
+  // Fill the empty bucket from such a place, standing on the ground beside it.
+  async function fillBucket(liquid) {
+    if (!find(/^bucket$/)) return { ok: false, error: 'no empty bucket' };
+    const spot = liquidNear(liquid);
+    if (!spot) return { ok: false, error: `no still ${liquid} lying open with ground beside it within 32 blocks` };
+    const { at, bank } = spot;
+    await walk(new goals.GoalBlock(bank.x, bank.y + 1, bank.z), 90000, `walking to the ${liquid}`);
+    if (bot.entity.position.distanceTo(at.offset(0.5, 1, 0.5)) > 4.5) return { ok: false, error: `could not get beside the ${liquid} at ${at.x} ${at.y} ${at.z}` };
+    await bot.equip(find(/^bucket$/), 'hand');
+    await bot.lookAt(at.offset(0.5, 0.95, 0.5), true);
+    await sleep(250);
+    bot.activateItem();
+    await sleep(700);
+    bot.deactivateItem();
+    await sleep(300);
+    return (carried()[`${liquid}_bucket`] ?? 0) > 0 ? { ok: true, at: { x: at.x, y: at.y, z: at.z } }
+      : { ok: false, error: `used the bucket on the ${liquid} at ${at.x} ${at.y} ${at.z} and it is still empty` };
+  }
+
   // Four blocks closed around and one overhead.
   function enclosed() {
     const feet = bot.entity.position.floored();
@@ -1172,7 +1215,7 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, at, time, upAt: bot.time.timeOfDay, asked, stayed: true, still: true };
   }
 
-  return { kit, kitWants: () => kitFrom(have(), memory.chest ?? {}), markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { liquidNear, fillBucket, kit, kitWants: () => kitFrom(have(), memory.chest ?? {}), markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, farm, goals, Vec3, round, isHostile };
 }

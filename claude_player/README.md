@@ -35,6 +35,8 @@ changes that code. Built 2026-10-03 and 04. Player name in the game: `Claude`.
 | Stop the brain, keep the reflexes | `node claude_player/player.mjs auto off` (and `auto on`) |
 | Look without touching | skills `look_around`, `look_for`, `what_is`, `who_is_near`, `path_check`, `body_check`, `body_facts` |
 | Have it follow someone | `node claude_player/player.mjs follow '{"player":"fogsift","seconds":600}'`, or "follow me" in the game's chat. `stop` ends it. Another session's menu in the game (the G key) sends the same. |
+| Send it to bed, and release it | `node claude_player/player.mjs bed` (it stays there until morning), `node claude_player/player.mjs resume`. In chat: "go to bed", "rise and shine", "resume". |
+| Where it stands in the game's advancements | `node claude_player/curriculum.mjs` |
 | See what it sees | `node claude_player/player.mjs look` (as it stands), `look north`, `look around`, `look fogsift`, `look furnace`, `look -352 59 459`; add `--open` to show the picture. It prints where the PNG is and what is in it in words. Then read the PNG. |
 | The score against Codex's player | `node claude_player/score.mjs`, counted from the server's log. `node claude_player/player.mjs score '{"say":true}'` says it in the game. |
 | Be woken when something happens | `node claude_player/watch_events.mjs 3300 420` as a background task: it ends on a death, an advancement, a person speaking, an error, or 7 minutes of nothing |
@@ -56,12 +58,13 @@ stopped after 2 hours, and that is how it was stopped in the middle of a good ru
 | `sight.mjs` | The drawing itself, with no game connection: one ray for each dot of the picture through a box of block states, creatures as boxes, the writing on the picture, PNG in and out. |
 | `textures.mjs` | Reads the game's own block textures out of the installed game once, into `data/claude_player/sight-cache/` (not in git). |
 | `actions.mjs` | What can be asked for over the control port besides player.mjs's own commands (`look`, `score`). Loaded again when it changes, so a new command needs no restart. |
+| `curriculum.mjs`, `advancements.mjs` | The curriculum: the game's own advancements, read from the server's jar, surveyed for what is earned, what is open, what the program has a way to, and what it has none for. `node claude_player/curriculum.mjs` prints it. The brain's `curriculum` goal takes the first open one the planner has a step for; the rest is the list of requests to the session. |
 | `score.mjs`, `challenge.json` | The challenge with Codex's player, and its score counted from the server's log. |
 | `report.mjs`, `asks.json` | The report the session reads at the start of each turn (what needs deciding first), and what has been asked for with whether each is done. |
 | `RESEARCH.md` | What others have built along these lines, with sources, and what this player takes from each. |
 | `skills/*.mjs` | One small file per thing the player can be asked to do. |
 | `pure.mjs` | Small functions with no game connection. |
-| `../tests/claude_*.test.mjs` | 44 tests: the planner played from empty hands to an iron pickaxe; the reflex rules held against the situations that killed the player; the room's way out; what was really said in chat read for what it asked; the score; the eyes on a made-up world. |
+| `../tests/claude_*.test.mjs` | 61 tests: the planner played from empty hands to an iron pickaxe; the reflex rules held against the situations that killed the player; the room's way out; what was really said in chat read for what it asked; the score; the eyes on a made-up world; the report and the watcher; the kit from the chest; staying in bed; the curriculum on a small tree and on the game's own list. |
 | `journal/` | A copy of the journal, the memory and the advancements as they stood when this was written. The live ones are in `../data/claude_player/`, which is not in git. |
 
 What reloads when its file is saved, with the player still running: `brain.mjs`,
@@ -145,6 +148,9 @@ In his words, with the day. These are standing.
   when making your decisions and test your code in game, in a continuous iterative loop that
   ends when your avatar completes all Minecraft achievements autonomously in one run"
   (2026-10-04, pasted into the session)
+- "search through those ideas and implment one of them" (2026-10-04; the curriculum, see RESEARCH.md)
+- "make sure your avatar can sleep and doesn't abandon it permanently if resummoned to sleep"
+  (2026-10-04; called to bed, or with anyone else in a bed, it stays until morning)
 - In the game, as fogsift: "Claude can you build a bigger base?" (06:17 on 2026-10-04; the
   player took it for small talk and the session did not see it until 07:45. Not built yet.)
   "What do you guys think about doing some cleanup today?" and "I was thinking we could

@@ -158,6 +158,10 @@ test('death 23: cornered with a sword in hand it fights the creeper, and with ro
   assert.equal(decide(senses({ armed: true, cornered: false, foe: creeper(3.2) }), {}).act.kind, 'run');
   // Cornered with nothing in hand there is no fight to have: it makes what way it can.
   assert.equal(decide(senses({ armed: false, cornered: true, foe: creeper(3.2) }), {}).act.kind, 'run');
+  // In its closed base with a creeper outside the wall (not seen): it is left alone, and so is the sleep.
+  const walled = decide(senses({ armed: true, cornered: true, night: true, exposed: false, busy: 'sleep', foe: { id: 9, name: 'creeper', distance: 4, visible: false } }), {});
+  assert.equal(walled.act.kind, 'none');
+  assert.equal(walled.interrupt, null);
   // A creeper 9 blocks off is not yet a reason for either.
   assert.equal(decide(senses({ armed: true, cornered: true, foe: creeper(9) }), {}).act.kind, 'none');
 });
