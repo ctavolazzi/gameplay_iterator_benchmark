@@ -376,7 +376,19 @@ export function make(bot, signal, memory = {}) {
     await walk(new goals.GoalNear(block.position.x, block.position.y, block.position.z, 2), 60000, 'walking to the furnace');
     const furnace = await within(bot.openFurnace(bot.blockAt(block.position)), 8000, 'opening the furnace');
     try {
-      await furnace.putFuel(bot.registry.itemsByName[fuel].id, null, fuelCount);
+      // Turn 5: "destination full", twice. The furnace still held coal from the smelt before
+      // and this one brought planks. What is already in a furnace is looked at first: the
+      // output is taken, input of another kind is taken, and fuel that is there is used.
+      if (furnace.outputItem()) await furnace.takeOutput();
+      const oldInput = furnace.inputItem();
+      if (oldInput && oldInput.name !== input) await furnace.takeInput();
+      const oldFuel = furnace.fuelItem();
+      const oldFuelEnough = oldFuel && fuelNeeded(oldFuel.name, count) !== null && oldFuel.count >= fuelNeeded(oldFuel.name, count);
+      if (oldFuel && oldFuel.name !== fuel && !oldFuelEnough) await furnace.takeFuel();
+      if (!oldFuelEnough) {
+        const there = oldFuel?.name === fuel ? oldFuel.count : 0;
+        if (there < fuelCount) await furnace.putFuel(bot.registry.itemsByName[fuel].id, null, fuelCount - there);
+      }
       await furnace.putInput(bot.registry.itemsByName[input].id, null, count);
       const deadline = Date.now() + (count * 11 + 10) * 1000;
       while (Date.now() < deadline && (furnace.outputItem()?.count ?? 0) < count) {

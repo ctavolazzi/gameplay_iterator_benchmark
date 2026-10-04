@@ -72,6 +72,12 @@ night shelter"; that was already 4 when it was written.
 | 3 (18:10) | The race: bed goal, `build_base`, `sleep`, `goto`; chat replies (`chat.mjs`). | Room dug in 41 s ("dug 16, closed 1 gaps, 0 still open"). Chat answered where it was and what it was doing. |
 | 4 (18:22 to 18:56) | By hand, under the clock: breath reflex (four versions), `recover` (two), sight widened from 40 to 110 blocks, bed ahead of tools. | Sweet Dreams at 18:55:29. 6 deaths in this stretch, 3 of them in one cave. |
 
+| 5 (19:15) | First turn run from the loop. `smelt` looks at what is already in the furnace: output taken, input of another kind taken, fuel that is there used. | Before: the morning's first 4 smelts worked, then 2 in a row failed with "destination full" (planks brought to a furnace still holding coal), and the shield and the iron sword were stuck behind them. After: the next 2 smelts worked; shield made and held at 19:17:39, iron sword at 19:18:16. Since the morning 44 steps chosen by the brain, 5 failed. Deaths still 9, the last at 18:46:18. |
+
+Next turn's candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
+decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be
+dug from where the player stands, with no walk.
+
 ## Notes from the player
 
 CT's notes in the game's chat, and what was done with each. `chat.mjs` writes them to
@@ -96,6 +102,7 @@ Each one is from the journal, with the turn it came from.
 - A fetch has to end with getting out. Twice the things were picked up and lost again on the spot (turn 4).
 - The game tells the player about creatures 100 blocks away. Looking only 40 blocks out, it walked 250 blocks west while six sheep stood 65 to 88 blocks from home (turn 4).
 - The other player being near must not stop the work: with Codex's player by the base, every stone within 12 blocks of it was off limits and the planner went for deepslate under the base floor (turn 4). People keep 12 blocks; programs' players 3.
+- A furnace remembers what was left in it. Bringing a second kind of fuel to it fails unless the first is looked at (turn 5).
 - `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
 - What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
 
