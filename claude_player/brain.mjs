@@ -65,20 +65,27 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     // bed is gone or it is no longer night.
     const bedAt = memory.places?.bed;
     const hour = bot.time.timeOfDay;
-    if (!bedAt || hour < 12300 || hour > 23400 || bot.isSleeping) delete memory.order;
+    // The order lasts the night: it is not dropped once the player is in its bed, or it would
+    // get up for the next goal on the list while the one who asked lay waiting.
+    if (!bedAt || hour < 12300 || hour > 23400) delete memory.order;
     else {
       const from = bot.entity.position;
       const far = Math.hypot(from.x - bedAt.x, from.y - bedAt.y, from.z - bedAt.z);
       const why = `${memory.order.player} asked in chat for everyone to sleep`;
       const step = far > 20 && from.y < bedAt.y - 16 ? { skill: 'surface', args: {}, why, goal: 'asked', timeout: 600, pass: { night: true } }
         : far > 20 ? { skill: 'goto', args: { x: bedAt.x, y: bedAt.y, z: bedAt.z, range: 3 }, why, goal: 'asked', timeout: 240, pass: { night: true } }
-          : { skill: 'sleep', args: {}, why, goal: 'asked', timeout: 130, pass: { night: true } };
+          : { skill: 'sleep', args: { stay: true }, why, goal: 'asked', timeout: Math.min(900, Math.round((23460 - hour) / 20) + 40), pass: { night: true } };
       // A step that has just failed waits its turn like any other. At 07:49 on 2026-10-04 the
       // climb to the bed was asked for 524 times in 5 minutes and failed in a quarter of a second each time.
       const held = (memory.blocked[signature(step)]?.until ?? 0) > now;
       memory.thought = { at: new Date().toISOString(), goal: 'asked to sleep', step: held ? 'waiting to try the way to bed again' : step.skill, why, stuck: {} };
       return held ? null : step;
     }
+  }
+  // In its bed with the night going on, nothing else is started: it stays, whoever asked.
+  if (bot.isSleeping && bot.time.timeOfDay >= 12541 && bot.time.timeOfDay < 23400) {
+    memory.thought = { at: new Date().toISOString(), goal: 'sleep', step: 'sleep', why: 'in bed, and the night is not over', stuck: {} };
+    return { skill: 'sleep', args: { stay: true }, why: 'in bed, and the night is not over', goal: 'sleep', timeout: Math.min(900, Math.round((23460 - bot.time.timeOfDay) / 20) + 40), pass: { night: true } };
   }
   if (memory.order?.kind === 'follow') {
     // Asked to follow, in chat or from CT's menu in the game. The step is given again after a
@@ -526,7 +533,8 @@ export async function learn({ row, memory, fresh }) {
   // A follow that ended for any reason but a reflex (a fight, a creeper) is over: the time was
   // up, the person went out of sight, or someone said stop.
   if (row.skill === 'follow' && memory.order?.kind === 'follow' && !/^reflex:/.test(row.note ?? '')) delete memory.order;
-  if (row.skill === 'sleep' && row.ok) { memory.spawnBed = true; if (memory.order?.kind === 'bed') delete memory.order; }
+  // A bed order is not ended by a sleep that worked: it ends with the night (think() drops it).
+  if (row.skill === 'sleep' && row.ok) memory.spawnBed = true;
   // A table that could not be taken back is let go of, so it is not tried for ever.
   if (row.skill === 'take_back' && !row.ok && row.args?.at) {
     const at = row.args.at;

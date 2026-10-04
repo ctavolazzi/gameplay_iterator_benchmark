@@ -210,3 +210,36 @@ test('follow me is an order that lasts, from a person and never from a program',
   await p.call('Codex', 'Claude, follow me?');
   assert.equal(p.memory.order, undefined);
 });
+
+test('called back to bed it stays: an order lasts the night, and it does not leave while anyone else is in a bed', async () => {
+  const { inBed } = await import('../claude_player/lib.mjs');
+  const { overheard } = await import(process.env.CHAT ?? '../claude_player/chat.mjs');
+  // Not asked and nobody else in a bed: it asks three times and then leaves (CT's own rule).
+  assert.equal(inBed({ stay: false, othersAsleep: 0, asked: 0 }), 'ask');
+  assert.equal(inBed({ stay: false, othersAsleep: 0, asked: 2 }), 'ask');
+  assert.equal(inBed({ stay: false, othersAsleep: 0, asked: 3 }), 'leave');
+  // 09:32:01 on 2026-10-04: fogsift was in his bed and it had been called back to its own. It left.
+  assert.equal(inBed({ stay: false, othersAsleep: 1, asked: 3 }), 'stay');
+  assert.equal(inBed({ stay: true, othersAsleep: 0, asked: 3 }), 'stay');
+  assert.equal(inBed({ stay: true, othersAsleep: 0, asked: 0 }), 'stay');
+
+  // The game's count of sleepers is kept, and it sends a player that is up to its bed for the rest of the night.
+  const out = [];
+  const memory = { places: { bed: { x: -352, y: 59, z: 460 } } };
+  const hour = 14000;
+  await overheard({ bot: { username: 'Claude', isSleeping: false, time: { timeOfDay: hour, day: 56 }, entity: { position: vec(-352, 59, 459) } },
+    memory, text: '1/3 players sleeping', status: { doing: { skill: 'collect' }, thought: { goal: 'mining' } }, event: () => {}, say: (line) => out.push(line), stop: () => {} });
+  assert.deepEqual({ asleep: memory.sleepers.asleep, needed: memory.sleepers.needed }, { asleep: 1, needed: 3 });
+  assert.equal(memory.order.kind, 'bed');
+  const nightLeft = ((23460 - hour) / 20) * 1000;
+  assert.ok(memory.order.until - Date.now() > nightLeft - 5000, 'the order lasts until morning');
+
+  // A person asking does the same, and "rise and shine" ends it and gets it up.
+  const w = world({ hour: 14000 });
+  await w.call('fogsift', 'should we all go to sleep?');
+  assert.equal(w.memory.order?.kind, 'bed');
+  assert.ok(w.memory.order.until - Date.now() > nightLeft - 5000);
+  const up = world({ hour: 14000, memory: { order: { kind: 'bed', player: 'fogsift', until: Date.now() + 400000 } } });
+  await up.call('fogsift', 'ok rise and shine everybody');
+  assert.equal(up.memory.order, undefined);
+});

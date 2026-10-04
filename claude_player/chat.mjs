@@ -83,7 +83,9 @@ function toBed({ bot, memory, who, stop }) {
   if (trip.need > trip.left + 30) {
     return `I am ${trip.up} blocks under my bed: about ${trip.need} s away, and the night has ${trip.left} s left. I would not make it, so I am staying at work.`;
   }
-  memory.order = { kind: 'bed', player: who, until: Date.now() + Math.min(trip.left + 20, trip.need + 120) * 1000 };
+  // The order lasts what is left of the night: it used to end two minutes after the bed was
+  // reached, and with it went the reason to stay there.
+  memory.order = { kind: 'bed', player: who, until: Date.now() + (trip.left + 20) * 1000 };
   memory.noBedUntil = 0;
   stop();
   return trip.need > 45 ? `Going to bed. I am about ${trip.need} s from it.` : 'Going to bed.';
@@ -140,6 +142,7 @@ export async function heard({ bot, memory, username, message, status, event, say
   let answer;
   if (asked === 'morning') {
     if (memory.order?.kind === 'bed') delete memory.order;
+    if (status.doing?.skill === 'sleep') stop();
     answer = `Good morning, ${username}. I am ${doing}.`;
   } else if (asked === 'bed') {
     // Every player has to be in a bed for the night to pass (the world's rule since 06:40 on
@@ -158,7 +161,8 @@ export async function heard({ bot, memory, username, message, status, event, say
     stop();
     answer = `Following you for ten minutes. Say stop and I will stay, or resume and I go back to my own work. I am ${away}.`;
   } else if (asked === 'resume') {
-    if (status.doing?.skill === 'follow') stop();
+    // Said to a player that is following or lying in its bed, it ends that too.
+    if (['follow', 'sleep'].includes(status.doing?.skill)) stop();
     delete memory.order;
     answer = `Carrying on: ${doing}.`;
   } else if (asked === 'come') {
@@ -224,6 +228,9 @@ export async function overheard({ bot, memory, text, status, event, say, stop })
   // "1/3 players sleeping": someone is in a bed and waiting. This player goes too, without
   // being asked, and says so once a night.
   const sleepers = /^(\d+)\/(\d+) players? sleeping/.exec(text);
+  // How many are in a bed is kept: in its own bed, the player stays while anyone else is in theirs.
+  if (sleepers) memory.sleepers = { asleep: Number(sleepers[1]), needed: Number(sleepers[2]), at: now };
+  if (/^sleeping through this night/i.test(text)) delete memory.sleepers;
   // Not while it is getting into its own bed: at 09:03:12 on 2026-10-04 the count it had just
   // caused itself stopped its own sleep skill, and it said "Going to bed." from its bed.
   const bedding = status?.doing?.skill === 'sleep' || /sleep|home by dusk/.test(status?.thought?.goal ?? '');

@@ -58,6 +58,12 @@ export function diamondsWanted(have) {
   }
   return diamonds;
 }
+// What to do in bed with the night going on: stay when it was asked to sleep or when someone
+// else is in a bed too; otherwise ask, three times, and then leave.
+export function inBed({ stay, othersAsleep, asked }) {
+  if (stay || othersAsleep > 0) return 'stay';
+  return asked < 3 ? 'ask' : 'leave';
+}
 export function kitFrom(have, there) {
   const take = [];
   const after = { ...have };
@@ -1074,7 +1080,13 @@ export function make(bot, signal, memory = {}) {
   // if they still are not in bed it says so and gets up (CT, 2026-10-04: "if they don't after
   // 3 chat messages, you should say 'fine screw it I'm going mining then'").
   //   beforeBed: something to do once it stands by the bed.   say: how to speak in chat.
-  async function sleepInBed(beforeBed = null, say = null) {
+  // Get into the bed, and stay in it until morning or until it is right to give up.
+  // stay: it was asked to sleep, by a person or by the game's count of sleepers. Then it does
+  // not get up by itself. Not asked, it tells the others to sleep three times and then leaves
+  // (CT, 2026-10-04), unless one of them is in a bed by then: nobody is left waiting alone.
+  // On 2026-10-04 fogsift lay in his bed while this player, called back to its own, said its
+  // three lines and left again, twice (09:27:30 and 09:32:01).
+  async function sleepInBed(beforeBed = null, say = null, { stay = false, seconds = 100 } = {}) {
     const stillNight = () => bot.time.timeOfDay >= 12541 && bot.time.timeOfDay <= 23458;
     let time = bot.time.timeOfDay;
     let at = null;
@@ -1087,35 +1099,77 @@ export function make(bot, signal, memory = {}) {
       if (beforeBed) await beforeBed();
       const deadline = Date.now() + 70000;
       while (bot.time.timeOfDay > 11000 && bot.time.timeOfDay < 12541 && Date.now() < deadline) { check(); await sleep(50); }
-      time = bot.time.timeOfDay;
-      try {
-        await within(bot.sleep(bot.blockAt(bed.position)), 8000, 'getting into bed');
-      } catch (error) {
-        return { ok: false, error: `${error.message} (time ${time})` };
+      // The bed will not take a player with something hostile within 8 blocks of it, walls or
+      // no walls. It is tried again for 45 s: what can be fought is gone after, a creeper is
+      // waited for. If it still will not, the reason names what stood near the bed.
+      const tryUntil = Date.now() + 45000;
+      const near = [];
+      for (;;) {
+        check();
+        time = bot.time.timeOfDay;
+        try {
+          await within(bot.sleep(bot.blockAt(bed.position)), 8000, 'getting into bed');
+          break;
+        } catch (error) {
+          check();
+          const foe = bot.nearestEntity((e) => isHostile(e) && Math.abs(e.position.x - bed.position.x) <= 9 && Math.abs(e.position.z - bed.position.z) <= 9
+            && e.position.y - bed.position.y <= 5 && bed.position.y - e.position.y <= 7);
+          if (foe) near.push(`${foe.name} ${Math.round(foe.position.distanceTo(bed.position))} blocks off`);
+          if (!/monsters/.test(error.message) || Date.now() > tryUntil) {
+            return { ok: false, error: `${error.message} (time ${time}${near.length ? `; by the bed: ${[...new Set(near)].slice(0, 3).join(', ')}` : ''})` };
+          }
+          if (foe && foe.name !== 'creeper' && (bestOf('_sword') ?? bestOf('_axe'))) await hunt(foe.name).catch(() => check());
+          else await sleep(4000);
+          await walk(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), 20000, 'back to the bed').catch(() => check());
+        }
       }
     }
-    const waitForMorning = async (seconds) => {
-      for (let waited = 0; waited < seconds * 2 && bot.isSleeping && stillNight(); waited++) { check(); await sleep(500); }
+    const waitForMorning = async (wait) => {
+      for (let waited = 0; waited < wait * 2 && bot.isSleeping && stillNight(); waited++) { check(); await sleep(500); }
       return !bot.isSleeping || !stillNight();
     };
     if (await waitForMorning(8)) return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: 0 };
     const others = Object.keys(bot.players).filter((name) => name !== bot.username);
     if (!others.length || !say) {
-      await waitForMorning(40);
+      await waitForMorning(Math.max(40, seconds));
       return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: 0 };
     }
+    // How many are in a bed, as the game last said it ("2/3 players sleeping"), this player among them.
+    const count = () => (memory.sleepers && Date.now() - memory.sleepers.at < 180000 ? memory.sleepers : null);
+    const othersAsleep = () => Math.max(0, (count()?.asleep ?? 0) - (bot.isSleeping ? 1 : 0));
     const asks = [
       `${others.join(', ')}: could you get into a bed, please? I am in mine, and the night ends when we are all asleep.`,
       `Still in bed and still night. ${others.join(' and ')}, a bed each and it is morning.`,
       'Last time of asking: bed, please.',
     ];
-    for (let asked = 1; asked <= asks.length; asked++) {
-      say(asks[asked - 1]);
+    let asked = 0;
+    for (;;) {
+      const next = inBed({ stay, othersAsleep: othersAsleep(), asked });
+      if (next === 'stay') break;
+      if (next === 'leave') {
+        say('Fine, screw it, I\'m going mining then.');
+        const up = await getUp();
+        return { ok: true, at, time, upAt: bot.time.timeOfDay, asked, gaveUp: true, up };
+      }
+      say(asks[asked]);
+      asked += 1;
       if (await waitForMorning(20)) return { ok: true, at, time, upAt: bot.time.timeOfDay, asked };
     }
-    say('Fine, screw it, I\'m going mining then.');
-    const up = await getUp();
-    return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: asks.length, gaveUp: true, up };
+    // Staying: until morning, or until the time this step was given runs out.
+    const told = count();
+    say(told ? `In bed, and staying. ${told.asleep} of ${told.needed} asleep: whoever is still up, a bed please.`
+      : `In bed, and staying until morning. ${others.join(' and ')}: a bed each and the night is over.`);
+    const until = Date.now() + seconds * 1000;
+    let lastSaid = Date.now();
+    while (Date.now() < until) {
+      if (await waitForMorning(5)) return { ok: true, at, time, upAt: bot.time.timeOfDay, asked, stayed: true };
+      if (Date.now() - lastSaid > 90000) {
+        const now = count();
+        say(`Still in bed${now ? `: ${now.asleep} of ${now.needed} asleep` : ''}.`);
+        lastSaid = Date.now();
+      }
+    }
+    return { ok: true, at, time, upAt: bot.time.timeOfDay, asked, stayed: true, still: true };
   }
 
   return { kit, kitWants: () => kitFrom(have(), memory.chest ?? {}), markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
