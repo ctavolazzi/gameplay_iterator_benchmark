@@ -13,6 +13,20 @@ export async function look(ctx, args = {}) {
   return seen;
 }
 
+// Follow a player until the time is up or it is told to stop: { player, seconds }. The order is
+// the brain's to carry out, so a fight on the way does not end it. The plain `stop` action
+// ends it, and so does "stop" in chat. For CT's menu in the game (tools/tab_board.mjs).
+export async function follow(ctx, args = {}) {
+  const player = String(args.player ?? '');
+  if (!ctx.bot.players[player] || player === ctx.bot.username) throw new Error(`no other player called ${player} is in the game`);
+  const seconds = Math.max(10, Math.min(3600, Number(args.seconds) || 600));
+  ctx.memory.order = { kind: 'follow', player, until: Date.now() + seconds * 1000 };
+  ctx.saveMemory();
+  ctx.stop(`${player} asked`);
+  ctx.event('order', { kind: 'follow', player, seconds });
+  return { ok: true, following: player, seconds };
+}
+
 // The score in the challenge, from the server's log. With { say: true } it is said in the game's chat.
 export async function score(ctx, args = {}) {
   const score = await ctx.fresh('score.mjs');

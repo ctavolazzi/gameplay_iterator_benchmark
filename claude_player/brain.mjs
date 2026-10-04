@@ -80,6 +80,14 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       return held ? null : step;
     }
   }
+  if (memory.order?.kind === 'follow') {
+    // Asked to follow, in chat or from CT's menu in the game. The step is given again after a
+    // fight has stopped it, until the time is up or someone says stop.
+    const who = memory.order.player;
+    const left = Math.round((memory.order.until - now) / 1000);
+    memory.thought = { at: new Date().toISOString(), goal: `following ${who}`, step: 'follow', why: `${who} asked`, stuck: {} };
+    return { skill: 'follow', args: { player: who, seconds: Math.min(880, left) }, why: `${who} asked`, goal: 'asked', timeout: Math.min(900, left + 15), pass: { night: true } };
+  }
   if (memory.order?.kind === 'come') {
     memory.thought = { at: new Date().toISOString(), goal: `coming to ${memory.order.player}`, step: 'come', stuck: {} };
     return { skill: 'come', args: { player: memory.order.player }, why: `${memory.order.player} asked in chat`, goal: 'asked', timeout: 60 };
@@ -277,6 +285,25 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       return !nearBase && junk >= 128 ? open({ skill: 'drop_junk', args: {}, why: `${junk} blocks of stone that are no use`, timeout: 30 }) : null;
     }],
     ['recover', recover],
+    // After a death the pack is empty and the chest in the base is not. Before wood is cut for a
+    // wooden pickaxe, what the chest holds is taken: armour, tools, and diamonds to make the rest.
+    ['kit', () => {
+      const chest = memory.baseHas?.chest;
+      const b = memory.base;
+      if (!chest || !b || fromHome > 80) return null;
+      // Once the chest has been looked into, what it holds is known: the trip is made when it
+      // has something the player is the better for, diamonds for missing diamond things included.
+      // Before that, when the player is without an iron pickaxe or a chestplate.
+      const lacks = !hasTool(have, 'iron_pickaxe') || !Object.keys(have).some((name) => /^(iron|diamond|netherite)_chestplate$/.test(name));
+      if (memory.chest ? !api.kitWants().length : !lacks) return null;
+      const inside = Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2;
+      if (inside) return open({ skill: 'kit', args: { at: chest }, why: 'what the chest holds, before making anything again', timeout: 60 });
+      if (world.night && world.exposed) return null;
+      // From under ground, up first: the walk asked for from 46 blocks off at y 53 was thought
+      // about for 45 s and not walked (09:18 on 2026-10-04).
+      if (!world.exposed && world.y < world.surfaceY - 6) return open({ skill: 'surface', args: {}, why: 'up, and then to the chest in the base', timeout: 600 });
+      return open({ skill: 'goto', args: { x: b.x, y: b.y, z: b.z, range: 1 }, why: 'to the chest in the base for armour, tools and diamonds', timeout: 240 });
+    }],
     // During the race the bed came before tools. It is won; a bed that is carried still goes back first.
     ...(bedHad && !memory.places?.bed ? [['base', base]] : []),
     ['pickaxe', tool('wooden_pickaxe')],
@@ -496,6 +523,9 @@ export async function learn({ row, memory, fresh }) {
   }
   if (row.skill === 'recover') delete memory.lastDeath;
   if (row.skill === 'come') delete memory.order;
+  // A follow that ended for any reason but a reflex (a fight, a creeper) is over: the time was
+  // up, the person went out of sight, or someone said stop.
+  if (row.skill === 'follow' && memory.order?.kind === 'follow' && !/^reflex:/.test(row.note ?? '')) delete memory.order;
   if (row.skill === 'sleep' && row.ok) { memory.spawnBed = true; if (memory.order?.kind === 'bed') delete memory.order; }
   // A table that could not be taken back is let go of, so it is not tried for ever.
   if (row.skill === 'take_back' && !row.ok && row.args?.at) {

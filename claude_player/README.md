@@ -34,6 +34,7 @@ changes that code. Built 2026-10-03 and 04. Player name in the game: `Claude`.
 | Ask it to do one thing | `node claude_player/player.mjs run collect '{"block":"log","count":3}'` |
 | Stop the brain, keep the reflexes | `node claude_player/player.mjs auto off` (and `auto on`) |
 | Look without touching | skills `look_around`, `look_for`, `what_is`, `who_is_near`, `path_check`, `body_check`, `body_facts` |
+| Have it follow someone | `node claude_player/player.mjs follow '{"player":"fogsift","seconds":600}'`, or "follow me" in the game's chat. `stop` ends it. Another session's menu in the game (the G key) sends the same. |
 | See what it sees | `node claude_player/player.mjs look` (as it stands), `look north`, `look around`, `look fogsift`, `look furnace`, `look -352 59 459`; add `--open` to show the picture. It prints where the PNG is and what is in it in words. Then read the PNG. |
 | The score against Codex's player | `node claude_player/score.mjs`, counted from the server's log. `node claude_player/player.mjs score '{"say":true}'` says it in the game. |
 | Be woken when something happens | `node claude_player/watch_events.mjs 3300 420` as a background task: it ends on a death, an advancement, a person speaking, an error, or 7 minutes of nothing |
@@ -135,6 +136,15 @@ In his words, with the day. These are standing.
 - "enable your avatar in world to 'see' things and 'take a look' at something in game. you
   should be able to produce a screenshot of the perspective of your agent at any time, and
   use these screenshots to help you make decisions in-game" (2026-10-04)
+- "when you have a moment, open an instance that will allow me, the player, to play the
+  game with you" (2026-10-04; done with `node tools/watch_client.mjs launch --coop --username fogsift`)
+- "the goal, remember, is to make something that can play the game, react and respond in
+  real time, adapt and evolve to new challenges, build and defend itself, as it attempts to
+  pursue achievements in the game and also responds to the game chat. it should make periodic
+  requests to you to help modify its code and you should eveluate the available data sources
+  when making your decisions and test your code in game, in a continuous iterative loop that
+  ends when your avatar completes all Minecraft achievements autonomously in one run"
+  (2026-10-04, pasted into the session)
 - In the game, as fogsift: "Claude can you build a bigger base?" (06:17 on 2026-10-04; the
   player took it for small talk and the session did not see it until 07:45. Not built yet.)
   "What do you guys think about doing some cleanup today?" and "I was thinking we could
@@ -177,19 +187,20 @@ is CT's and is never started, stopped or restarted from here.
 - **The world's spawn point is in a treetop**, and a bed only holds the spawn point if it has
   been slept in since it was last put down.
 
-## Score, from the server's logs, at 08:50 on 2026-10-04
+## Score, from the server's logs, at 09:26 on 2026-10-04
 
 12 advancements for `Claude`: Stone Age, Getting an Upgrade, Monster Hunter, Acquire
 Hardware, Isn't It Iron Pick, Suit Up, Sweet Dreams, A Seedy Place, Diamonds!, Voluntary
 Exile, Cover Me with Diamonds, Not Today, Thank You. Codex's player (`CodexAstra`, and
 `Codex` since 08:00:51) has 4 in the log, and fogsift 5.
 
-21 deaths: 12 to zombies, 4 drowned, and one each to a spider, a cave spider, a skeleton, a
-creeper and a magma block. NOTES.md has each one and what it changed. None since 04:32:03.
+23 deaths: 12 to zombies, 4 drowned, 2 to creepers, a fall down its own shaft, and one each
+to a spider, a cave spider, a skeleton and a magma block. NOTES.md has each one and what it
+changed. The last two were at 09:04:52 and 09:21:19 on 2026-10-04.
 Codex's player has died 31 times and fogsift 16.
 
 The challenge (`challenge.json`): since 08:00 on 2026-10-04, one point for each new
-advancement and minus one for each death. At 08:50: Claude 0, Codex minus 1.
+advancement and minus one for each death. At 09:26: Claude minus 2, Codex minus 1.
 `node claude_player/score.mjs` says what it is now.
 
 ## What is next

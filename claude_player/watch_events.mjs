@@ -29,6 +29,9 @@ const alive = () => {
   try { process.kill(JSON.parse(readFileSync(CONTROL, 'utf8')).pid, 0); return true; } catch { return false; }
 };
 
+// Said once it is watching, on the error stream: what it prints to the other one is its answer.
+console.error(`watching ${JOURNAL} from byte ${from}`);
+
 const timer = setInterval(() => {
   const now = size();
   if (now > from) {

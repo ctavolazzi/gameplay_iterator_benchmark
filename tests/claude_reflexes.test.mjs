@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decide } from '../claude_player/reflexes.mjs';
+// REFLEXES lets a changed reflexes.mjs be checked beside the one the running player has loaded.
+const { decide, pickWay } = await import(process.env.REFLEXES ?? '../claude_player/reflexes.mjs');
 import { reaches, shutIn } from '../claude_player/pure.mjs';
 
 // What the player senses on a quiet afternoon above ground, with a sword. Each test changes
@@ -78,6 +79,16 @@ test('a pass for the night holds off the dig-in, and only that', () => {
   assert.equal(decide(senses({ night: true }), { nextDigIn: 200000 }).act.kind, 'none');
 });
 
+test('following a person at night it does not dig in: the one who leads decides', () => {
+  assert.equal(decide(senses({ night: true, busy: 'follow' }), {}).act.kind, 'none');
+  assert.equal(decide(senses({ night: true, busy: 'follow' }), {}).interrupt, null);
+  // It still fights what comes close, and still runs from a creeper.
+  assert.equal(decide(senses({ night: true, busy: 'follow', foe: zombie(2) }), {}).act.kind, 'fight');
+  assert.equal(decide(senses({ night: true, busy: 'follow', foe: { id: 9, name: 'creeper', distance: 4, visible: true } }), {}).act.kind, 'run');
+  // Any other step at night is still stopped for the dig-in.
+  assert.equal(decide(senses({ night: true, busy: 'explore' }), {}).interrupt, 'night: digging in');
+});
+
 test('closed in at night nothing outside is fought, and the shelter is noted once', () => {
   const first = decide(senses({ night: true, exposed: false, enclosed: true, foe: zombie(2) }), {});
   assert.equal(first.act.kind, 'none');
@@ -122,4 +133,31 @@ test('turn 13: a chest beside the bed shuts the corner off from the doorway, and
   assert.deepEqual(shutIn(room(['-1,0']), [2, 0]), [[-1, 1]]);
   assert.equal(reaches(room([]), [-1, 1], [2, 0]), true);
   assert.equal(reaches(room(['0,0']), [-1, 1], [2, 0]), false);
+});
+
+test('death 22: it runs only where there is room, and a fall or a wall is not room', () => {
+  // Straight away from the creeper was its own mine shaft, 32 blocks deep, one step off; a sixth of a turn aside was open.
+  assert.equal(pickWay([0, 4, 4, 2, 4]), 1);
+  assert.equal(pickWay([4, 0, 0, 0, 0]), 0);
+  // Two blocks to a wall is not a way; three is.
+  assert.equal(pickWay([2, 3, 4, 4, 4]), 1);
+  // In a pit, or on a pillar: no way at all.
+  assert.equal(pickWay([1, 0, 2, 0, 1]), -1);
+});
+
+test('death 23: cornered with a sword in hand it fights the creeper, and with room it still runs', () => {
+  const creeper = (distance) => ({ id: 9, name: 'creeper', distance, visible: true });
+  // 09:20:57 on 2026-10-04: a creeper 3.2 blocks off in the pit by its own doorway, a stone sword in the pack.
+  const pit = decide(senses({ armed: true, cornered: true, foe: creeper(3.2), busy: 'goto' }), {});
+  assert.equal(pit.act.kind, 'fight');
+  assert.equal(pit.interrupt, 'fighting a creeper');
+  assert.equal(pit.set.fleeing, 0);
+  // It was already running when the walls closed in: the run is dropped for the fight.
+  assert.equal(decide(senses({ armed: true, cornered: true, foe: creeper(2.5) }), { fleeing: 105000 }).act.kind, 'fight');
+  // With room to run, a creeper is still run from, sword or not.
+  assert.equal(decide(senses({ armed: true, cornered: false, foe: creeper(3.2) }), {}).act.kind, 'run');
+  // Cornered with nothing in hand there is no fight to have: it makes what way it can.
+  assert.equal(decide(senses({ armed: false, cornered: true, foe: creeper(3.2) }), {}).act.kind, 'run');
+  // A creeper 9 blocks off is not yet a reason for either.
+  assert.equal(decide(senses({ armed: true, cornered: true, foe: creeper(9) }), {}).act.kind, 'none');
 });

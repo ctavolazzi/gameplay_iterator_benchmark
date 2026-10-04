@@ -42,3 +42,31 @@ test('a journal is summed by skill, with the reasons for failure', () => {
   assert.deepEqual(summary.advancements, ['Stone Age']);
   assert.equal(summary.sessions, 1);
 });
+
+test('after a death the chest gives back what makes the player fit to go out', async () => {
+  const { kitFrom } = await import('../claude_player/lib.mjs');
+  // 09:05 on 2026-10-04: a wooden and a stone pickaxe and a stone sword in the pack; in the chest
+  // 97 diamonds, the iron set, three hoes and some redstone.
+  const have = { wooden_pickaxe: 1, stone_pickaxe: 1, stone_sword: 1, oak_log: 4 };
+  const there = { diamond: 97, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, wooden_hoe: 3, redstone: 5, cooked_beef: 12 };
+  const take = Object.fromEntries(kitFrom(have, there));
+  assert.deepEqual(take, { iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, diamond: 29, cooked_beef: 8 });
+  // In full diamond with diamond tools and food, nothing is taken.
+  const dressed = { diamond_pickaxe: 1, diamond_sword: 1, diamond_helmet: 1, diamond_chestplate: 1, diamond_leggings: 1, diamond_boots: 1, cooked_beef: 6 };
+  assert.deepEqual(kitFrom(dressed, there), []);
+  // Worse armour than it has on is left where it is, and diamonds are counted against what it carries.
+  assert.deepEqual(Object.fromEntries(kitFrom({ ...dressed, diamond_pickaxe: 0, diamond: 1 }, { iron_chestplate: 1, diamond: 50, iron_pickaxe: 1 })), { iron_pickaxe: 1, diamond: 2 });
+  // An empty chest gives nothing.
+  assert.deepEqual(kitFrom(have, {}), []);
+});
+
+test('diamonds taken for armour are not spares: what the missing diamond things take is kept', async () => {
+  const { diamondsWanted, kitFrom } = await import('../claude_player/lib.mjs');
+  // 09:21:53 on 2026-10-04, after the kit: the iron set on, a diamond pickaxe, an iron sword.
+  const dressed = { iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, diamond_pickaxe: 1, iron_sword: 1 };
+  assert.equal(diamondsWanted(dressed), 26);          // a sword and four pieces of armour
+  assert.equal(diamondsWanted({ ...dressed, diamond_sword: 1, diamond_chestplate: 1 }), 16);
+  // With those 26 on it, the chest is asked for no more; with 20, for the 6 it is short.
+  assert.deepEqual(kitFrom({ ...dressed, diamond: 26 }, { diamond: 90 }), []);
+  assert.deepEqual(kitFrom({ ...dressed, diamond: 20 }, { diamond: 90 }), [['diamond', 6]]);
+});

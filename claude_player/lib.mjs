@@ -39,6 +39,41 @@ export const JUNK = /^(cobblestone|cobbled_deepslate|stone|tuff|diorite|andesite
 const KEPT_ON_THE_PLAYER = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed|crafting_table|furnace|shield)$/;
 const WORN_SLOTS = [5, 6, 7, 8, 45];
 
+// What to take out of the chest to be fit to go out again: [[name, count]]. have is what the
+// player carries and wears, there is what the chest holds. A better piece of each kind of
+// armour, a better pickaxe and sword, a shield, something to eat, and diamonds for the diamond
+// things it will still be without. Death 22 left it cutting wood for a wooden pickaxe beside a
+// chest that held 97 diamonds and an iron set.
+const MATERIALS = ['wooden', 'leather', 'stone', 'chainmail', 'golden', 'iron', 'diamond', 'netherite'];
+const DIAMONDS_FOR = { _pickaxe: 3, _sword: 2, _helmet: 5, _chestplate: 8, _leggings: 7, _boots: 4 };
+const rank = (name) => MATERIALS.indexOf(name.split('_')[0]);
+const bestOfKind = (things, kind) => Object.keys(things).filter((name) => name.endsWith(kind) && things[name] > 0).sort((a, b) => rank(b) - rank(a))[0] ?? null;
+// How many diamonds the diamond things the player is without would take. These are not
+// spares: at 09:21:55 on 2026-10-04 the 26 just taken from the chest for armour were put
+// back into it two seconds later.
+export function diamondsWanted(have) {
+  let diamonds = 0;
+  for (const [kind, cost] of Object.entries(DIAMONDS_FOR)) {
+    if (rank(bestOfKind(have, kind) ?? '') < MATERIALS.indexOf('diamond')) diamonds += cost;
+  }
+  return diamonds;
+}
+export function kitFrom(have, there) {
+  const take = [];
+  const after = { ...have };
+  for (const kind of Object.keys(DIAMONDS_FOR)) {
+    const mine = bestOfKind(have, kind), theirs = bestOfKind(there, kind);
+    if (theirs && (!mine || rank(theirs) > rank(mine))) { take.push([theirs, 1]); after[theirs] = 1; }
+  }
+  if (!have.shield && there.shield) take.push(['shield', 1]);
+  const short = Math.min(there.diamond ?? 0, Math.max(0, diamondsWanted(after) - (have.diamond ?? 0)));
+  if (short > 0) take.push(['diamond', short]);
+  const eaten = Object.entries(have).filter(([name]) => /^cooked_|^bread$/.test(name)).reduce((sum, [, n]) => sum + n, 0);
+  const food = Object.keys(there).find((name) => /^cooked_|^bread$/.test(name));
+  if (eaten < 4 && food) take.push([food, Math.min(there[food], 8)]);
+  return take;
+}
+
 const round = (v) => ({ x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z) });
 
 // Nearest block of each kind worth knowing about, and every creature close by.
@@ -622,9 +657,11 @@ export function make(bot, signal, memory = {}) {
     const keepOne = new Set([bestOf('_pickaxe')?.name, bestOf('_sword')?.name, bestOf('_axe')?.name, bestOf('_hoe')?.name, 'iron_pickaxe'].filter(Boolean));
     const kept = {};
     const out = {};
+    let diamonds = diamondsWanted(have());
     for (const item of bot.inventory.items()) {
       if (JUNK.test(item.name) || KEPT_ON_THE_PLAYER.test(item.name)) continue;
       let count = item.count;
+      if (item.name === 'diamond') { const keep = Math.min(count, diamonds); count -= keep; diamonds -= keep; }
       if (keepOne.has(item.name) && !kept[item.name]) { kept[item.name] = true; count -= 1; }
       if (count > 0) out[item.name] = (out[item.name] ?? 0) + count;
     }
@@ -661,10 +698,38 @@ export function make(bot, signal, memory = {}) {
           break;
         }
       }
+      // What the chest holds now is remembered, so that the brain knows what a death can be made good from.
+      memory.chest = {};
+      for (const item of chest.containerItems()) memory.chest[item.name] = (memory.chest[item.name] ?? 0) + item.count;
     } finally {
       chest.close();
     }
     return full ? { ok: false, error: full, put, taken } : { ok: true, put, taken };
+  }
+
+  // Take from the chest what kitFrom() says, and remember what is left in it.
+  async function kit(chestAt) {
+    const block = bot.blockAt(new Vec3(chestAt.x, chestAt.y, chestAt.z));
+    if (block?.name !== 'chest') return { ok: false, error: 'no chest there' };
+    await walk(new goals.GoalNear(chestAt.x, chestAt.y, chestAt.z, 2), 30000, 'walking to the chest');
+    const chest = await within(bot.openContainer(block), 8000, 'opening the chest');
+    const taken = {};
+    try {
+      const there = {};
+      for (const item of chest.containerItems()) there[item.name] = (there[item.name] ?? 0) + item.count;
+      for (const [name, count] of kitFrom(have(), there)) {
+        check();
+        try {
+          await within(chest.withdraw(bot.registry.itemsByName[name].id, null, count), 5000, `taking ${name} out of the chest`);
+          taken[name] = count;
+        } catch (error) { /* no room, or gone: the next visit tries again */ }
+      }
+      memory.chest = {};
+      for (const item of chest.containerItems()) memory.chest[item.name] = (memory.chest[item.name] ?? 0) + item.count;
+    } finally {
+      chest.close();
+    }
+    return { ok: true, taken, left: memory.chest };
   }
 
   // Feed two animals that stand near each other, so that they breed. The proof that it worked
@@ -1053,7 +1118,7 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: asks.length, gaveUp: true, up };
   }
 
-  return { markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { kit, kitWants: () => kitFrom(have(), memory.chest ?? {}), markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, farm, goals, Vec3, round, isHostile };
 }

@@ -43,8 +43,9 @@ export function reads(message) {
   if (!short && ADVICE.test(text)) return 'note';
   if (/\b(stop|wait|stay|hold on|freeze)\b/.test(text)) return 'wait';
   if (/\b(resume|continue|carry on|go on|go ahead|keep going)\b/.test(text)) return 'resume';
+  if (/\b(follow( me)?|come with me|stay with me|stick with me|walk with me)\b/.test(text)) return 'follow';
   // "Come on everybody" is not "come to me".
-  if (/\b(come (here|over|to me|with me|back)|follow( me)?|over here|to me)\b/.test(text) || /^\s*(claude[,:]?\s*)?come( here)?( please| plz| pls)?[.!]*\s*$/.test(text)) return 'come';
+  if (/\b(come (here|over|to me|back)|over here|to me)\b/.test(text) || /^\s*(claude[,:]?\s*)?come( here)?( please| plz| pls)?[.!]*\s*$/.test(text)) return 'come';
   if (/\b(plant|farm|crops?|wheat|plot)\b.*\b(here|there|by me|where i (am|stand))\b/.test(text)) return 'farm';
   if (/\b(what (do|can|did) you see|what'?s (around|near|ahead|in front)|look (at|around|north|south|east|west|up|down|behind|ahead)|take a look|have a look|screenshot|picture|photo|show me)\b/.test(text)) return 'look';
   if (/\bwhere\b/.test(text)) return 'where';
@@ -152,7 +153,12 @@ export async function heard({ bot, memory, username, message, status, event, say
     memory.order = { kind: 'wait', player: username, until: now + 60000 };
     stop();
     answer = 'Stopping. I will wait here for a minute; say resume to send me on.';
+  } else if (asked === 'follow') {
+    memory.order = { kind: 'follow', player: username, until: now + 600000 };
+    stop();
+    answer = `Following you for ten minutes. Say stop and I will stay, or resume and I go back to my own work. I am ${away}.`;
   } else if (asked === 'resume') {
+    if (status.doing?.skill === 'follow') stop();
     delete memory.order;
     answer = `Carrying on: ${doing}.`;
   } else if (asked === 'come') {
@@ -200,7 +206,7 @@ export async function heard({ bot, memory, username, message, status, event, say
   } else if (asked === 'thanks') {
     answer = 'Thank you.';
   } else if (asked === 'help') {
-    answer = 'Ask me what I am doing, where I am, what I carry, what I see, my progress or the score. Or say come, wait, resume or go to bed.';
+    answer = 'Ask me what I am doing, where I am, what I carry, what I see, my progress or the score. Or say come, follow me, wait, resume, go to bed or plant here.';
   } else if (asked === 'greeting') {
     answer = `Hello ${username}. I am ${doing}. ${race} Health ${Math.round(status.health)}, ${status.earned.length} advancements.`;
   } else {

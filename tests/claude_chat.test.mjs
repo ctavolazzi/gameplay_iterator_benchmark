@@ -28,7 +28,8 @@ test('a question about the bed is not a request to get into it, and come on is n
   assert.equal(reads('where is your bed'), 'where');
   assert.equal(reads('nice bed'), 'race');
   assert.equal(reads('come here'), 'come');
-  assert.equal(reads('follow me'), 'come');
+  assert.equal(reads('follow me'), 'follow');
+  assert.equal(reads('Claude come with me'), 'follow');
   assert.equal(reads('Claude come'), 'come');
   assert.notEqual(reads('come on man'), 'come');
   assert.equal(reads('you should go to bed'), 'bed');
@@ -196,4 +197,16 @@ test('the count of sleepers sends it to bed, but not when it is the one getting 
   assert.equal(bedding.memory.order, undefined);
   assert.equal(bedding.memory.stopped, undefined);
   assert.deepEqual(bedding.out, []);
+});
+
+test('follow me is an order that lasts, from a person and never from a program', async () => {
+  const w = world();
+  await w.call('fogsift', 'Claude follow me');
+  assert.equal(w.memory.order?.kind, 'follow');
+  assert.equal(w.memory.order.player, 'fogsift');
+  assert.ok(w.memory.order.until > Date.now() + 500000);
+  assert.match(w.out[0], /^Following you for ten minutes/);
+  const p = world();
+  await p.call('Codex', 'Claude, follow me?');
+  assert.equal(p.memory.order, undefined);
 });

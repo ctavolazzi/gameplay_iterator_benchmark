@@ -86,8 +86,11 @@ export function decide(s, st) {
   // 3 run. A pass for being brave covers everything but creepers: it was once set to get the
   // player past zombies to its dropped things, and it walked it up to a creeper instead.
   const mustRun = foe && ((creeper && foe.distance < R.creeper) || (!pass.brave && !s.armed && foe.distance < R.runFrom));
+  // With nowhere to run and a weapon in hand it does not run at the walls: it fights, a creeper too.
+  const stand = !!(mustRun && s.cornered && s.armed);
   let running = st.fleeing ?? 0;
-  if (mustRun) {
+  if (stand) { running = 0; out.set.fleeing = 0; }
+  if (mustRun && !stand) {
     stop(`backing away from a ${foe.name}`);
     if (!running || s.now > running) say('flee', { foe: foe.name, distance: +foe.distance.toFixed(1), health: s.health });
     running = s.now + 6000;
@@ -108,8 +111,9 @@ export function decide(s, st) {
   // 4 dig in. Begun only with nothing hostile within 8 blocks: begun with a zombie 5 blocks
   // off, it was hit 16 times while it dug. tick() runs it beside the other rules and stops
   // it the moment one of them wants the player for something else.
+  // Not while it follows a person: the one who leads decides where the night is spent.
   const tooClose = foe && !creeper && foe.distance < R.digClear;
-  if (s.night && s.exposed && !tooClose && !pass.night && s.now > (st.nextDigIn ?? 0)) {
+  if (s.night && s.exposed && !tooClose && !pass.night && s.busy !== 'follow' && s.now > (st.nextDigIn ?? 0)) {
     stop('night: digging in');
     out.set.fight = null;
     out.hold = 20000;
@@ -130,7 +134,7 @@ export function decide(s, st) {
 
   // 6 fight. Only with a sword or an axe; a creeper is never fought.
   let begin = false;
-  if (!fight && s.armed && foe && !creeper && (foe.distance < R.fightTouch || (foe.distance < R.fightStart && foe.visible))) {
+  if (!fight && s.armed && foe && (!creeper || stand) && (foe.distance < R.fightTouch || (foe.distance < R.fightStart && foe.visible) || stand)) {
     fight = { id: foe.id, name: foe.name, started: s.now, hits: 0 };
     begin = true;
     out.set.fight = fight;
@@ -171,6 +175,48 @@ function eat(s, st, out) {
 
 const ARCHERS = /^(skeleton|stray|bogged|pillager)$/;
 
+// Which way to run. rooms is how many blocks each heading can be run along before a wall or
+// a fall stops it, in the order the headings are liked (straight away from the danger first).
+// The first with room for 3 blocks is taken; -1 when there is none, and then it is cornered.
+// Death 22, 09:04:52 on 2026-10-04: it backed away from a creeper at y 41, straight into its
+// own mine shaft, and fell 32 blocks. Death 23, 09:21:19: in the pit by its own doorway it
+// ran at the walls until the creeper went off.
+export function pickWay(rooms, least = 3) {
+  return rooms.findIndex((room) => room >= least);
+}
+
+// How many blocks a heading can be run along, up to 4: until a wall, a low roof, or ground
+// that falls away by more than 3 blocks (or into lava). A single block in the way is a step up.
+function roomAlong(api, me, dx, dz) {
+  const Vec3 = api.Vec3;
+  let y = Math.floor(me.y);
+  for (let step = 1; step <= 4; step++) {
+    const x = Math.floor(me.x + dx * step), z = Math.floor(me.z + dz * step);
+    const at = (dy) => new Vec3(x, y + dy, z);
+    const foot = api.solid(at(0)), head = api.solid(at(1));
+    if (foot && (head || api.solid(at(2)))) return step - 1;
+    if (foot) { y += 1; continue; }
+    if (head) return step - 1;
+    let drop = 0;
+    while (drop < 12 && !api.solid(at(-1 - drop))) drop += 1;
+    if (drop > 3 || /lava/.test(api.nameAt(at(-drop)) ?? '')) return step - 1;
+    y -= drop;
+  }
+  return 4;
+}
+
+// The ways to run from a foe, best first: [dx, dz, room].
+function waysFrom(api, me, foeAt, turned = 0) {
+  const away = me.minus(foeAt);
+  const length = Math.hypot(away.x, away.z) || 1;
+  const [ax, az] = [away.x / length, away.z / length];
+  return [0, Math.PI / 3, -Math.PI / 3, 2 * Math.PI / 3, -2 * Math.PI / 3].map((more) => {
+    const turn = turned + more;
+    const dx = ax * Math.cos(turn) - az * Math.sin(turn), dz = ax * Math.sin(turn) + az * Math.cos(turn);
+    return [dx, dz, roomAlong(api, me, dx, dz)];
+  });
+}
+
 export async function tick({ bot, api, state, memory, busy, event, interrupt, makeApi }) {
   const now = Date.now();
   const me = bot.entity.position;
@@ -189,8 +235,11 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt, ma
   // clears it when the step ends. Nothing else writes it.
   const pass = memory.pass ?? {};
 
+  // Where it could run to, looked at only when something hostile is near.
+  const ways = foeEntity ? waysFrom(api, me, foeEntity.position, state.fleeTurn ?? 0) : null;
   const senses = {
     now, busy, pass, breath, where: api.round(me),
+    cornered: ways ? pickWay(ways.map((way) => way[2])) < 0 : false,
     health: +bot.health.toFixed(1), food: bot.food,
     underWater: api.wetAt(me.offset(0, 1.6, 0)),
     night: api.night(), exposed: api.exposed(), enclosed: api.enclosed() || api.snug(),
@@ -234,18 +283,23 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt, ma
     const from = bot.entities[act.from];
     if (from) {
       bot.pathfinder.setGoal(null);
-      const away = me.minus(from.position);
-      const length = Math.hypot(away.x, away.z) || 1;
-      let [dx, dz] = [away.x / length, away.z / length];
       const stuck = state.fleeFrom && now - state.fleeFrom.at > 1000 && me.distanceTo(state.fleeFrom.where) < 1;
       if (!state.fleeFrom || now - state.fleeFrom.at > 1000) state.fleeFrom = { at: now, where: me.clone() };
       if (stuck) state.fleeTurn = (state.fleeTurn ?? 0) + Math.PI / 3;
-      const turn = state.fleeTurn ?? 0;
-      [dx, dz] = [dx * Math.cos(turn) - dz * Math.sin(turn), dx * Math.sin(turn) + dz * Math.cos(turn)];
-      await bot.lookAt(me.offset(dx * 10, 1.6, dz * 10), true);
-      bot.setControlState('forward', true);
-      bot.setControlState('sprint', true);
-      bot.setControlState('jump', true);
+      // The ground is looked at before it is run over: the first way with room, or failing
+      // that the one with the most.
+      const all = waysFrom(api, me, from.position, state.fleeTurn ?? 0);
+      const picked = pickWay(all.map((way) => way[2]));
+      const [dx, dz, room] = picked >= 0 ? all[picked] : [...all].sort((p, q) => q[2] - p[2])[0];
+      if (room < 1) bot.clearControlStates();
+      else {
+        await bot.lookAt(me.offset(dx * 10, 1.6, dz * 10), true);
+        bot.setControlState('forward', true);
+        bot.setControlState('sprint', true);
+        // A sprinting jump carries four blocks: only with that much room ahead.
+        bot.setControlState('jump', room >= 4);
+      }
+      if (picked < 0 && now - (state.corneredAt ?? 0) > 10000) { state.corneredAt = now; event('cornered', { foe: from.name, room, where: api.round(me) }); }
     }
   } else if (act.kind === 'dig_in') {
     if (!state.task) {

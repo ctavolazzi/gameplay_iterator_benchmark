@@ -66,11 +66,13 @@ test('the watcher wakes the session when one step has failed six times the same 
   const ended = new Promise((resolve) => watcher.on('exit', resolve));
   const row = (y) => `${JSON.stringify({ at: new Date().toISOString(), kind: 'skill', skill: 'surface', args: {}, ok: false, note: `climbed 0 blocks to ${y}, still under ground`, ms: 250 })}\n`;
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  await pause(500);
+  // Rows written before the watcher has started are not its to count: on a busy machine half a
+  // second was not always enough, and the test failed once for that.
+  await new Promise((resolve) => watcher.stderr.once('data', resolve));
   for (let i = 0; i < 5; i++) appendFileSync(join(dir, 'journal.jsonl'), row(-3));
   // A step the reflexes stopped does not count toward the six.
   appendFileSync(join(dir, 'journal.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), kind: 'skill', skill: 'surface', args: {}, ok: false, note: 'reflex: fighting a zombie', ms: 250 })}\n`);
-  await pause(2600);
+  await pause(4500);
   assert.equal(said, '');
   appendFileSync(join(dir, 'journal.jsonl'), row(-4));
   await ended;
