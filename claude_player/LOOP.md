@@ -1,21 +1,26 @@
 # The loop
 
-Claude plays Minecraft as its own player, and improves how it plays between stretches of
-play. This file is the procedure one turn of the loop follows. It is the same idea as the
-benchmark (play, store everything, improve the code that plays, play again), with two
-differences: the player is a Claude session and not the local model, and the world is one
-persistent world, not a fresh one per run.
+Claude plays Minecraft as its own player, and improves how it plays while it plays. The
+player decides for itself what to do; a Claude chat session wakes at intervals, reads what
+happened, and changes the code that decides. It is the benchmark's idea (play, store
+everything, improve the code that plays, play again) with two differences: the code is
+written to play without a model in the loop, and the world is one persistent world.
 
 ## The parts
 
 | File | What it is |
 | --- | --- |
-| `player.mjs` | The long-running player. Holds the connection, runs skills one at a time, journals everything. |
-| `skills/*.mjs` | What the player can be asked to do. Loaded again whenever a file changes. **This is what improves.** |
-| `lib.mjs` | The functions skills are built from (walk, dig, craft, place, smelt, eat). Also reloaded on change. |
-| `reflexes.mjs` | What the player does unasked, twice a second: hit back, back away, eat. Also reloaded on change. |
+| `player.mjs` | The long-running player. Holds the connection, runs one skill at a time, journals everything, reconnects. The only file that needs a restart to change. |
+| `reflexes.mjs` | Four times a second: fight what is close, back away from creepers, dig in at night, eat. |
+| `brain.mjs` | Whenever nothing is running: the list of goals in order, and what failed lately. Asks the planner for the next step toward the first goal that is not done. |
+| `planner.mjs` | The one next step toward having an item, from the game's own recipes, what can be dug, and what can be smelted. Asked again after every step. |
+| `skills/*.mjs` | What the player can do: collect, craft, place, smelt, hunt, plant, descend, surface, recover. |
+| `lib.mjs` | The functions all of the above are built from. |
 | `NOTES.md` | The record: the goal ladder, one row per turn of the loop, and what has been learned. |
-| `../data/claude_player/journal.jsonl` | Every skill call, hit, death, encounter and advancement. Not in git. |
+| `../data/claude_player/` | `journal.jsonl` (every step, hit, death, encounter, advancement), `memory.json` (what the brain remembers), `advancements.json`. Not in git. |
+
+Everything but `player.mjs` is loaded again when its file changes, so the player keeps
+playing while it is edited.
 
 ## One turn
 
@@ -23,30 +28,28 @@ persistent world, not a fresh one per run.
    that the world is up (`lsof -nP -iTCP:25566 -sTCP:LISTEN`). World up: start the player again
    in the background (`node claude_player/player.mjs serve --port 25566`). World down: stop the
    loop and say so. Never start, stop or restart the world itself; it is not this loop's.
-2. **Read what happened** since the last turn: `player.mjs events 40` and `player.mjs summary`.
-   Look for deaths, damage, skills that failed, time wasted, chat from other players.
+2. **Read what happened** since the last turn: `player.mjs events 60`, `player.mjs summary`,
+   and `thought` in `status` (the goal it is on, and why each goal above it is stuck).
+   Look for deaths, damage, a step failing the same way twice, a goal that never moves.
 3. **Check the score against the game, not the journal.** Advancements count when the server's
    log says so: `grep "Claude has" runtime/minecraft-coop-26.1/logs/latest.log`.
-4. **Change one thing.** Take the worst thing step 2 showed (a death, a skill failing the same
-   way twice, a slow step) and fix its cause in `skills/`, `lib.mjs` or `reflexes.mjs`. Or, when
-   nothing is failing, write the skill the next goal on the ladder needs. `node --check` the file.
+4. **Change one thing.** Take the worst thing step 2 showed and fix its cause in the file that
+   owns it. `node --check` it; planner changes run `node --test tests/claude_planner.test.mjs`.
    One change per turn where possible, so the next turn's journal shows what it did.
-5. **Play.** Queue a plan toward the next goal on the ladder in `NOTES.md` and wait for it:
-   `player.mjs plan '[...]'` then `player.mjs wait 280`. Mark dependent steps `"stopOnFail": true`.
+5. **Watch it land**: `player.mjs wait 60`, and read whether the change did what was meant.
 6. **Write the turn down** in `NOTES.md`: what was changed, what was measured after. A lesson
    goes under Lessons only when the journal shows it.
-7. **Commit** this folder's changes when `npm test` passes: `git commit -F msg -- claude_player tests/claude_player.test.mjs`.
+7. **Commit** this folder's changes when `npm test` passes, with
+   `git commit -F msg -- claude_player tests/claude_player.test.mjs tests/claude_planner.test.mjs`.
    Only these paths. Other sessions have uncommitted work in this repository.
-8. **Schedule the next turn.** Leave a plan running that will outlast the wait.
+8. **Schedule the next turn.**
 
 ## Rules
 
 - No paid API calls. The loop is this chat session waking itself; `./iterate.mjs coach` and
   `loop` are never run.
-- The world is shared with CT (`fogsift`) and another session's `CodexBot`. Do not dig or build
-  within 12 blocks of another player, do not take from chests, do not hit players. Answer CT's
-  chat when it is addressed to Claude.
-- A skill is done when the journal row says what was gained, not when it returned.
-- Keep each turn short. The player does the playing; the turn reads, changes one thing, queues.
-- Stop the loop when CT says so, when the world is down, or after 3 turns in a row with no new
-  advancement and no skill fixed.
+- The world is shared with CT (`fogsift`) and other sessions' players. Nothing within 12
+  blocks of another player is dug, chests are left alone, players are never hit. Chat
+  addressed to Claude is answered.
+- A step is done when the journal row says what was gained, not when it returned.
+- Stop the loop when CT says so, or when the world is down.
