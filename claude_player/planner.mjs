@@ -55,6 +55,18 @@ export function signature(step) {
   return `${step.skill}:${a.block ?? a.item ?? a.input ?? a.animal ?? a.direction ?? ''}`;
 }
 
+// Whether the player's own crafting table or furnace close by should be picked up before
+// this step. Only when the step really leaves: the first version (turn 5) picked up before
+// every step that was not a craft or a smelt, so digging coal for the furnace meant taking
+// the furnace along and putting it straight back. In one hour: 175 times, 169 of them put
+// down again within 3 steps, 29% of all the time spent on steps.
+//   far: how many blocks away the step's target is, when it has one
+export function leaves(step, far = null) {
+  if (['explore', 'goto', 'descend', 'surface', 'recover', 'hunt'].includes(step.skill)) return true;
+  if (step.skill === 'collect') return far !== null && far > 16;
+  return false;
+}
+
 export function plan(item, count, world) {
   return need(item, count, world, []);
 }

@@ -25,9 +25,12 @@ playing while it is edited.
 ## One turn
 
 1. **Is the player there?** `node claude_player/player.mjs status`. If it does not answer, check
-   that the world is up (`lsof -nP -iTCP:25566 -sTCP:LISTEN`). World up: start the player again
-   in the background (`node claude_player/player.mjs serve --port 25566`). World down: stop the
-   loop and say so. Never start, stop or restart the world itself; it is not this loop's.
+   that the world is up (`lsof -nP -iTCP:25566 -sTCP:LISTEN`). The player is started from a
+   Terminal window with `open claude_player/play.command`, not as a background task of the chat
+   session: a session's background task is stopped after 2 hours (it happened at 20:14:49 on
+   2026-10-03, in the middle of a good run). If the player was stopped by that limit, say so
+   and let CT start it. World down: stop the loop and say so. Never start, stop or restart the
+   world itself; it is not this loop's.
 2. **Read what happened** since the last turn: `player.mjs events 60`, `player.mjs summary`,
    and `thought` in `status` (the goal it is on, and why each goal above it is stuck).
    Look for deaths, damage, a step failing the same way twice, a goal that never moves.

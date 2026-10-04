@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasTool, pickFuel, plan, signature } from '../claude_player/planner.mjs';
+import { hasTool, leaves, pickFuel, plan, signature } from '../claude_player/planner.mjs';
 
 // A small recipe book in the shape the game's own is handed to the planner.
 const woods = (make) => ['oak', 'birch'].map(make);
@@ -129,4 +129,13 @@ test('fuel is coal first, then enough wood, else none', () => {
 test('a failing step is remembered by what it was after, not how many', () => {
   assert.equal(signature({ skill: 'collect', args: { block: 'stone', count: 3 } }), signature({ skill: 'collect', args: { block: 'stone', count: 8 } }));
   assert.notEqual(signature({ skill: 'explore', args: { direction: 'north' } }), signature({ skill: 'explore', args: { direction: 'east' } }));
+});
+
+test('a table or furnace is picked up only before a step that really leaves', () => {
+  // What the first version did wrong, from the journal: coal dug 5 blocks from the furnace.
+  assert.equal(leaves({ skill: 'collect', args: { block: 'coal_ore' } }, 5), false);
+  assert.equal(leaves({ skill: 'collect', args: { block: 'iron_ore' } }, 30), true);
+  assert.equal(leaves({ skill: 'collect', args: { block: 'iron_ore' } }, null), false);
+  for (const skill of ['craft', 'smelt', 'place', 'wear', 'sleep', 'build_base', 'take_back']) assert.equal(leaves({ skill, args: {} }), false, skill);
+  for (const skill of ['explore', 'goto', 'descend', 'surface', 'hunt', 'recover']) assert.equal(leaves({ skill, args: {} }), true, skill);
 });

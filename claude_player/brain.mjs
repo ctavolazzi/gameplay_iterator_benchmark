@@ -37,7 +37,7 @@ function recipesOf(bot, name) {
 }
 
 export async function think({ bot, api, observe, memory, earned, fresh }) {
-  const { plan, hasTool, signature } = await fresh('planner.mjs');
+  const { plan, hasTool, signature, leaves } = await fresh('planner.mjs');
   const now = Date.now();
   const seen = observe();
   const have = api.have();
@@ -181,7 +181,8 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   // CT's note: a crafting table or furnace that was put down can be broken and carried on.
   // Before a step that walks away, one of the player's own within 10 blocks is taken along.
   function tidy(step) {
-    if (['craft', 'smelt', 'place', 'take_back', 'sleep', 'build_base', 'wear', 'come'].includes(step.skill)) return null;
+    const target = step.skill === 'collect' ? api.reachable(step.args.block) : null;
+    if (!leaves(step, target ? target.distanceTo(here) : null)) return null;
     const mine = (memory.own ?? []).find((o) => !api.inBase(o.at) && Math.hypot(here.x - o.at.x, here.y - o.at.y, here.z - o.at.z) < 10);
     if (!mine || (mine.name === 'furnace' && !hasTool(have, 'wooden_pickaxe'))) return null;
     return open({ skill: 'take_back', args: { item: mine.name, at: mine.at }, why: `my ${mine.name} comes along (CT's note)`, goal: 'tidy', timeout: 45 });
@@ -221,7 +222,15 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['helmet', item('iron_helmet')],
     ['boots', item('iron_boots')],
     ['bucket', () => (have.bucket || have.water_bucket || have.lava_bucket ? null : plan('bucket', 1, world))],
-    ['Diamonds!', () => (hasTool(have, 'diamond_pickaxe') ? null : plan((have.diamond ?? 0) >= 3 ? 'diamond_pickaxe' : 'diamond', 3, world))],
+    // Turn 6: this asked for 3 of whichever it was after, so 9 diamonds became 3 pickaxes.
+    ['Diamonds!', () => (hasTool(have, 'diamond_pickaxe') ? null : (have.diamond ?? 0) >= 3 ? plan('diamond_pickaxe', 1, world) : plan('diamond', 3, world))],
+    // Turn 6: with the list above done it stood still for the last 5 minutes 48 seconds of its
+    // process. These keep it busy; a full set of diamond armour is the game's Cover Me with Diamonds.
+    ['diamond sword', tool('diamond_sword')],
+    ['diamond chestplate', item('diamond_chestplate')],
+    ['diamond leggings', item('diamond_leggings')],
+    ['diamond helmet', item('diamond_helmet')],
+    ['diamond boots', item('diamond_boots')],
   ];
 
   const stuck = {};

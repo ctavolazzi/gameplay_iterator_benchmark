@@ -39,8 +39,9 @@ Advancements. Earned means the server's log said so (`grep "Claude has" logs/lat
 | Isn't It Iron Pick | earned 18:17:22, the same |
 | Suit Up | earned 18:20:39, the same (lost with everything else 99 seconds later) |
 | Sweet Dreams | earned 18:55:29 |
+| Diamonds! | earned 19:34:29, by the brain alone |
 | A Seedy Place | earned 19:07:32, by the brain alone the morning after the bed: "got 2 wheat_seeds from 3 clumps of grass", then planted. The first `gather_seeds` got nothing in 150 s; the rewrite, which walks next to each clump, worked first time. |
-| Not Today, Thank You; Hot Stuff; Diamonds!; Ice Bucket Challenge | not started |
+| Not Today, Thank You; Hot Stuff; Ice Bucket Challenge; Cover Me with Diamonds | not started (a shield is held and a bucket is carried, but nothing uses them yet) |
 
 The game's first advancement, "Minecraft" (have a crafting table), is not announced in
 chat or in the server log, so nothing here can see it. It is not counted.
@@ -74,6 +75,8 @@ night shelter"; that was already 4 when it was written.
 
 | 5 (19:15) | First turn run from the loop. `smelt` looks at what is already in the furnace: output taken, input of another kind taken, fuel that is there used. | Before: the morning's first 4 smelts worked, then 2 in a row failed with "destination full" (planks brought to a furnace still holding coal), and the shield and the iron sword were stuck behind them. After: the next 2 smelts worked; shield made and held at 19:17:39, iron sword at 19:18:16. Since the morning 44 steps chosen by the brain, 5 failed. Deaths still 9, the last at 18:46:18. |
 
+| 6 (20:15) | No player to watch: its process was a background task of the chat session, and that has a 2-hour limit. It was stopped at 20:14:49 and not started again. Read the 55 minutes it had played alone, and changed three things from them: a table or furnace is picked up only before a step that really leaves (`leaves()` in planner.mjs, with a test); one diamond pickaxe is asked for, not three; goals beyond the first list (diamond sword and armour). | The hour alone, from the journal and the server's logs: 404 steps, 11 failed. Diamonds! at 19:34:29. Iron leggings, helmet, boots and a bucket. No deaths (still 9); 12 hits taken, 23.1 health in all, 7 fights. It came through a server restart by itself (kicked 19:28:11, back 19:29:26). `take_back` worked 174 times of 175, and that was the problem: 169 of them put the same thing down again within 3 steps; picking up and putting down took 593 of 2037 s, 29%. 9 diamonds became 3 diamond pickaxes at 20:09:01. Then it had no goal left and stood still for 5 minutes 48 seconds. None of the three changes has run in the game. |
+
 Next turn's candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
 decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be
 dug from where the player stands, with no walk.
@@ -87,7 +90,7 @@ CT's notes in the game's chat, and what was done with each. `chat.mjs` writes th
 | --- | --- | --- |
 | 18:37:56 | "if there's already a crafting table near you you can probably just walk to it you probably don't need to make a whole new one" | Right, and the journal agrees: a second table was placed 2 blocks from one that a single failed walk had written off. Changed: a table is written off for two minutes, not for good; the planner walks to a table the player already has within 40 blocks before making one. The player had answered this note with a greeting ("Hello fogsift. I am digging for iron_ore ..."); notes are now recognised before greetings. Seen working the next morning (19:08:35): it walked 20 blocks back to its own table to craft a furnace. |
 
-| 19:10 (to the session) | "you can also totally destroy crafting tables and furnaces and take them with you after you set them down" | Right: it saves a log or eight cobblestone each time and the walk back. Changed: `place` remembers which tables and furnaces are the player's own; before a step that walks away, the brain takes one within 10 blocks along (`take_back`). Never the base's, never anyone else's. Not yet seen working in the game. |
+| 19:10 (to the session) | "you can also totally destroy crafting tables and furnaces and take them with you after you set them down" | Right: it saves a log or eight cobblestone each time and the walk back. Changed: `place` remembers which tables and furnaces are the player's own; before a step that walks away, the brain takes one within 10 blocks along (`take_back`). Never the base's, never anyone else's. Seen working at 19:24:33 ("carrying the crafting_table again"), and then seen doing harm: my rule for when to pick up was too eager, and 29% of the next hour went on picking up and putting down (turn 6). The tip was right; my reading of "after" was wrong. |
 
 ## Lessons
 
@@ -103,6 +106,9 @@ Each one is from the journal, with the turn it came from.
 - The game tells the player about creatures 100 blocks away. Looking only 40 blocks out, it walked 250 blocks west while six sheep stood 65 to 88 blocks from home (turn 4).
 - The other player being near must not stop the work: with Codex's player by the base, every stone within 12 blocks of it was off limits and the planner went for deepslate under the base floor (turn 4). People keep 12 blocks; programs' players 3.
 - A furnace remembers what was left in it. Bringing a second kind of fuel to it fails unless the first is looked at (turn 5).
+- A good tip applied without a limit is a new fault. "Take it with you" has to mean "when you leave", and "leave" has to be measured (turn 6).
+- Tools wear out. At 19:54 it had none left of the three pickaxes it had carried, with no death in between, and the climb to the surface (wood for new handles) failed 5 times that hour (turn 6). A stock of logs before going down is not kept yet.
+- The player's process must not belong to a chat session: it was stopped by the session's 2-hour limit while playing well. `play.command` starts it from a Terminal window (turn 6).
 - `bot.wake()` does nothing on this version of the game: the player stays in bed until morning. That is the safest night there is, so it is kept.
 - What I got wrong myself: numbers written from memory. A commit message said 3 deaths when the journal had 4, and in chat the player told CT "3 of 3 wool" when one of the three was black.
 
@@ -111,4 +117,5 @@ Each one is from the journal, with the turn it came from.
 - The base's roof was open after the second trip in; a way in that can be closed (a door or a hatch) is not built.
 - Magma under water is not recognised.
 - `brave` and `nightPass` in memory were set by hand during the race. The brain sets `nightPass` in two places; nothing sets `brave` unless the bed is in the pack.
+- Diamond armour is not put on over iron: `wear` only fills an empty place.
 - Nothing yet reads `notes.jsonl` without the session: `watch_notes.mjs` wakes the session when CT says something the player cannot answer.
