@@ -401,7 +401,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   // Nothing left on the list (turn 12: full diamond armour on, and it stood still). By day:
   // up to the surface and a look around, which is where animals to breed and new country are.
   // Not further than 120 blocks from home, so that the bed can be reached by dusk.
-  if (!world.night) {
+  // From late afternoon it stays by its bed. At 07:47 on 2026-10-04 a look around walked 29
+  // blocks east, "home by dusk" called it back, and so on every 10 s until the bed would take it.
+  const nearlyDusk = !!(home && memory.places?.bed && time >= 10300);
+  if (!world.night && !nearlyDusk) {
     // Each way is tried in turn. Turn 13: the first was the only one tried, and when the climb
     // to the surface was marked as failing nothing else was, so it stood still all day.
     const ways = [];
@@ -419,7 +422,7 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       return { goal: 'look around', ...step };
     }
   }
-  memory.thought = { at: new Date().toISOString(), goal: null, step: null, stuck };
+  memory.thought = { at: new Date().toISOString(), goal: nearlyDusk && !world.night ? 'by my bed until dusk' : null, step: null, stuck };
   return null;
 }
 
