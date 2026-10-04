@@ -60,6 +60,22 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     memory.thought = { at: new Date().toISOString(), goal: `waiting, as ${memory.order.player} asked`, step: null, stuck: {} };
     return null;
   }
+  if (memory.order?.kind === 'bed') {
+    // Asked in chat to sleep. To the bed and into it, from wherever it is; given up if the
+    // bed is gone or it is no longer night.
+    const bedAt = memory.places?.bed;
+    const hour = bot.time.timeOfDay;
+    if (!bedAt || hour < 12300 || hour > 23400 || bot.isSleeping) delete memory.order;
+    else {
+      const from = bot.entity.position;
+      const far = Math.hypot(from.x - bedAt.x, from.y - bedAt.y, from.z - bedAt.z);
+      const why = `${memory.order.player} asked in chat for everyone to sleep`;
+      memory.thought = { at: new Date().toISOString(), goal: 'asked to sleep', step: far > 20 ? 'goto' : 'sleep', why, stuck: {} };
+      if (far > 20 && from.y < bedAt.y - 16) return { skill: 'surface', args: {}, why, goal: 'asked', timeout: 600, pass: { night: true } };
+      if (far > 20) return { skill: 'goto', args: { x: bedAt.x, y: bedAt.y, z: bedAt.z, range: 3 }, why, goal: 'asked', timeout: 240, pass: { night: true } };
+      return { skill: 'sleep', args: {}, why, goal: 'asked', timeout: 130, pass: { night: true } };
+    }
+  }
   if (memory.order?.kind === 'come') {
     memory.thought = { at: new Date().toISOString(), goal: `coming to ${memory.order.player}`, step: 'come', stuck: {} };
     return { skill: 'come', args: { player: memory.order.player }, why: `${memory.order.player} asked in chat`, goal: 'asked', timeout: 60 };
@@ -179,9 +195,8 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       if (have.lily_of_the_valley || have.bone_meal) return dye('craft', { item: 'white_dye', times: 1 }, 'white dye for the black wool');
       if (have.bone) return dye('craft', { item: 'bone_meal', times: 1 }, 'bone meal for white dye');
       const dusk = time < 14500 && fromHome < 60;
-      if (dusk && world.sees('lily_of_the_valley')) memory.nightPass = now + 40000;
       const lily = (!world.night || dusk) && world.sees('lily_of_the_valley') && dye('collect', { block: 'lily_of_the_valley', count: 1 }, 'a lily makes white dye for the black wool');
-      if (lily) return lily;
+      if (lily) return world.night ? { ...lily, pass: { night: true } } : lily;
       // Lilies were found 60 blocks south of home (look_for, 01:38). Too far to see from most places: walk there.
       const known = memory.known?.lily_of_the_valley;
       if (known && !world.night && Math.hypot(here.x - known.x, here.z - known.z) > 24) {
@@ -223,9 +238,9 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       if (table) return table;
     }
     // With the bed in the pack the walk home is worth a short run in the dark.
-    if (fromHome > 12 && world.night && bedToPlace && fromHome < 120) { memory.nightPass = now + 60000; memory.brave = now + 60000; }
-    else if (fromHome > 12 && world.night) return { stuck: 'the walk home waits for morning' };
-    if (fromHome > 12) return { skill: 'goto', args: { x: home.x, z: home.z, range: 4 }, why: 'the base is dug at home', timeout: 300 };
+    const dash = fromHome > 12 && world.night && bedToPlace && fromHome < 120;
+    if (fromHome > 12 && world.night && !dash) return { stuck: 'the walk home waits for morning' };
+    if (fromHome > 12) return { skill: 'goto', args: { x: home.x, z: home.z, range: 4 }, why: 'the base is dug at home', timeout: dash ? 90 : 300, ...(dash && { pass: { night: true, brave: true } }) };
     return open({ skill: 'build_base', args: {}, why: bedToPlace ? 'the bed goes in the base' : 'a room under the home site', timeout: 240 }) ?? { stuck: 'building the base keeps failing' };
   }
 
@@ -256,28 +271,29 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['pickaxe', tool('wooden_pickaxe')],
     // CT, 2026-10-03: a race with Codex's player to a base and a night in a bed near the
     // spawn point. The bed is three wool, so sheep come before everything but a pickaxe.
-    // Since 02:58 on 2026-10-04 one sleeper ends the night for everyone in this world (another
-    // session set the game rule at CT's request). So the bed is the best place to be at dusk:
-    // the night is skipped, and the base becomes the place to wake up after a death.
+    // The night passes when every player is in a bed (for a few hours on 2026-10-04 one sleeper
+    // was enough; CT put the rule back). So this player is in its bed at dusk whenever it is
+    // near it: it must not be the one holding the night up, and a night slept in the bed also
+    // makes the base the place to wake up after a death.
     ['home by dusk', () => {
       if (!home || !memory.places?.bed || time < 10300 || time > 14200 || fromHome < 20 || fromHome > 160) return null;
       if (!world.exposed && Math.abs(here.y - memory.places.bed.y) > 20) return null;   // deep under ground: stay there
-      memory.nightPass = now + 45000;   // the last stretch may run a little past dark
-      return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be in bed at dusk', timeout: 240 };
+      // The last stretch may run past dark: the pass lasts as long as this one walk.
+      return { skill: 'goto', args: { x: home.x, z: home.z, range: 6 }, why: 'to be in bed at dusk', timeout: 120, pass: { night: true } };
     }],
     ['sleep', () => {
       if (!memory.places?.bed || fromHome > 60 || !(bedTime || (time >= 12300 && time < 12541))) return null;
+      // Asked three times tonight and the others stayed up: no more bed until morning.
+      if (now < (memory.noBedUntil ?? 0)) return null;
       // Turn 11: from 56 blocks under its bed it set off for it 4 times, 100 s each, and never
       // arrived. Deep under ground the night does not matter: the bed is for when it is near.
       if (Math.abs(here.y - memory.places.bed.y) > 20) return null;
       // Turn 7: the walk to the bed kept being stopped by the reflex that digs in at night.
-      memory.nightPass = now + 45000;
-      return open({ skill: 'sleep', args: {}, why: 'a night in the bed is a night skipped', timeout: 100 });
+      return open({ skill: 'sleep', args: {}, why: 'a night in the bed is a night skipped', timeout: 130, pass: { night: true } });
     }],
     ['into the base', () => {
       if (!(memory.base && api.night() && api.exposed() && fromHome < 20)) return null;
-      memory.nightPass = now + 30000;
-      return { skill: 'goto', args: { x: memory.base.x, y: memory.base.y, z: memory.base.z, range: 1 }, why: 'the night is spent in the base', timeout: 90 };
+      return { skill: 'goto', args: { x: memory.base.x, y: memory.base.y, z: memory.base.z, range: 1 }, why: 'the night is spent in the base', timeout: 90, pass: { night: true } };
     }],
     // By day, inside the base with the doorway shut: open it. Nothing else can start from in there.
     ['out of the base', () => {
@@ -342,6 +358,9 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['diamond leggings', item('diamond_leggings')],
     ['diamond helmet', item('diamond_helmet')],
     ['diamond boots', item('diamond_boots')],
+    // A night the others would not sleep through is spent under ground, after diamonds: they
+    // are what everything further on is made of, and under ground the night does not matter.
+    ['mining', () => (world.night ? plan('diamond', (have.diamond ?? 0) + 3, world) : null)],
   ];
 
   const stuck = {};
@@ -359,15 +378,18 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   // up to the surface and a look around, which is where animals to breed and new country are.
   // Not further than 120 blocks from home, so that the bed can be reached by dusk.
   if (!world.night) {
-    let step = null;
-    if (!world.exposed && world.y < world.surfaceY - 6) step = open({ skill: 'surface', args: {}, why: 'nothing left to do down here', timeout: 600 });
-    else if (home && fromHome > 120) {
-      // Turn 13: it walked 120 blocks north, came home, and walked the same 120 blocks north
-      // again. Each time it turns for home, the next look is a quarter turn round.
+    // Each way is tried in turn. Turn 13: the first was the only one tried, and when the climb
+    // to the surface was marked as failing nothing else was, so it stood still all day.
+    const ways = [];
+    if (!world.exposed && world.y < world.surfaceY - 6) ways.push(open({ skill: 'surface', args: {}, why: 'nothing left to do down here', timeout: 600 }));
+    if (home && fromHome > 120) {
+      // Each time it turns for home, the next look is a quarter turn round: it had walked the
+      // same 120 blocks north twice.
       memory.heading = DIRECTIONS[(DIRECTIONS.indexOf(memory.heading ?? 'north') + 1) % 4];
-      step = { skill: 'goto', args: { x: home.x, z: home.z, range: 8 }, why: 'far enough from home', timeout: 300 };
+      ways.push({ skill: 'goto', args: { x: home.x, z: home.z, range: 8 }, why: 'far enough from home', timeout: 300 });
     }
-    else step = heading({ skill: 'explore', args: {}, why: 'nothing left on the list: a look around', timeout: 90 }, memory, world);
+    ways.push(heading({ skill: 'explore', args: {}, why: 'nothing left on the list: a look around', timeout: 90 }, memory, world));
+    const step = ways.find(Boolean);
     if (step) {
       memory.thought = { at: new Date().toISOString(), goal: 'look around', step: `${step.skill} ${JSON.stringify(step.args)}`, why: step.why, stuck };
       return { goal: 'look around', ...step };
@@ -418,7 +440,7 @@ export async function learn({ row, memory, fresh }) {
   }
   if (row.skill === 'recover') delete memory.lastDeath;
   if (row.skill === 'come') delete memory.order;
-  if (row.skill === 'sleep' && row.ok) memory.spawnBed = true;
+  if (row.skill === 'sleep' && row.ok) { memory.spawnBed = true; if (memory.order?.kind === 'bed') delete memory.order; }
   // A table that could not be taken back is let go of, so it is not tried for ever.
   if (row.skill === 'take_back' && !row.ok && row.args?.at) {
     const at = row.args.at;

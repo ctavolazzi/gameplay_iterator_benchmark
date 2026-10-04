@@ -42,6 +42,9 @@ export default async function buildBase({ bot, api, memory, note }) {
   const spots = { crafting_table: c.offset(-1, 0, -1), furnace: c.offset(0, 0, -1), chest: c.offset(1, 0, -1) };
   for (const [item, cell] of Object.entries(spots)) {
     if (!api.carried()[item]) continue;
+    // Asked before it is put down: would this leave any part of the room cut off from the doorway?
+    const cut = api.roomShutIn(c, [cell.x - c.x, cell.z - c.z]);
+    if (cut.length) { note(`${item} not put down: it would shut in ${cut.map((x) => x.join(' ')).join('; ')}`); continue; }
     const placed = await api.placeAt(item, cell);
     // What stands in the base is remembered apart from what was last put down anywhere: a table
     // set down in a mine 36 blocks below once made the brain think the base had lost its own.
@@ -55,5 +58,8 @@ export default async function buildBase({ bot, api, memory, note }) {
     const placed = await api.placeAt(bed, c.offset(0, 0, 1));
     if (placed.ok) { put.push(bed); (memory.places ??= {}).bed = placed.at; } else note(`bed: ${placed.error}`);
   }
-  return { ok: open === 0, note: `room at ${c.x} ${c.y} ${c.z}: dug ${dug.dug}, closed ${filled} gaps, ${open} still open, put down ${put.join(', ') || 'nothing'}` };
+  // And looked at after: every cell of the room that can be stood in must reach the doorway.
+  const shut = api.roomShutIn(c);
+  if (shut.length) note(`shut in from the doorway: ${shut.map((x) => x.join(' ')).join('; ')}`);
+  return { ok: open === 0 && shut.length === 0, note: `room at ${c.x} ${c.y} ${c.z}: dug ${dug.dug}, closed ${filled} gaps, ${open} still open, put down ${put.join(', ') || 'nothing'}${shut.length ? `, ${shut.length} cells shut in` : ''}` };
 }

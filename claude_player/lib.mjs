@@ -4,7 +4,7 @@
 
 import pathfinding from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-import { diffCarried, fuelNeeded } from './pure.mjs';
+import { diffCarried, fuelNeeded, shutIn } from './pure.mjs';
 
 const { goals } = pathfinding;
 export { goals, Vec3 };
@@ -67,7 +67,7 @@ export function make(bot, signal, memory = {}) {
     bot.pathfinder.thinkTimeout = 15000;
     // At night a step under the open sky costs a great deal, so a path stays underground when it can.
     if (bot.pathfinder.movements) {
-      bot.pathfinder.movements.exclusionAreasStep = night() && !((memory.nightPass ?? 0) > Date.now()) ? [(block) => ((block.skyLight ?? 0) >= 8 ? 40 : 0)] : [];
+      bot.pathfinder.movements.exclusionAreasStep = night() && !memory.pass?.night ? [(block) => ((block.skyLight ?? 0) >= 8 ? 40 : 0)] : [];
     }
   }
   // The pathfinder digs through what is in its way. Not through the base's furniture.
@@ -500,11 +500,17 @@ export function make(bot, signal, memory = {}) {
     }
   }
 
-  async function eat() {
+  // The best thing to eat that is carried, or null. Nothing that poisons.
+  function bestFood() {
     const foods = bot.registry.foodsByName ?? {};
-    const food = bot.inventory.items()
+    return bot.inventory.items()
       .filter((i) => foods[i.name] && !/rotten_flesh|spider_eye|poisonous|pufferfish|^chicken$/.test(i.name))
-      .sort((a, b) => (foods[b.name].foodPoints ?? 0) - (foods[a.name].foodPoints ?? 0))[0];
+      .sort((a, b) => (foods[b.name].foodPoints ?? 0) - (foods[a.name].foodPoints ?? 0))[0] ?? null;
+  }
+  const hasFood = () => !!bestFood();
+
+  async function eat() {
+    const food = bestFood();
     if (!food) return { ok: false, error: 'no food carried' };
     await bot.equip(food, 'hand');
     await within(bot.consume(), 6000, 'eating');
@@ -545,7 +551,7 @@ export function make(bot, signal, memory = {}) {
     // The game tells the player about animals 100 blocks off (who_is_near, turn 4): go that far for one.
     const target = bot.nearestEntity((e) => e.name === name && e.position.distanceTo(from) < 110);
     if (!target) return { ok: false, error: `no ${name} in sight` };
-    const weapon = find(/_sword$/) ?? find(/_axe$/);
+    const weapon = bestOf('_sword') ?? bestOf('_axe');
     if (weapon) await bot.equip(weapon, 'hand');
     const before = carried();
     const deadline = Date.now() + 30000 + target.position.distanceTo(from) * 500;
@@ -589,7 +595,7 @@ export function make(bot, signal, memory = {}) {
       for (const item of bot.inventory.items()) {
         check();
         let count = item.count;
-        if (keepAll.test(item.name) || /_(helmet|chestplate|leggings|boots)$/.test(item.name) && !put[item.name] && false) continue;
+        if (keepAll.test(item.name)) continue;
         if (keepOne.has(item.name) && !seen[item.name]) { seen[item.name] = true; count -= 1; }
         if (item.name === 'cobblestone') { const kept = seen.cobble ?? 0; const keep = Math.max(0, Math.min(count, 64 - kept)); seen.cobble = kept + keep; count -= keep; }
         if (count <= 0) continue;
@@ -759,11 +765,13 @@ export function make(bot, signal, memory = {}) {
     const spot = groundSpot();
     if (!spot) return { ok: false, error: 'no ground to dig into within 8 blocks' };
     await walk(new goals.GoalBlock(spot.x, spot.y, spot.z), 20000, 'walking to the ground').catch(() => {});
+    check();   // stopped for something more urgent while walking there
     await settle();
     const start = bot.entity.position.floored();
     for (let depth = 0; depth < 3; depth++) {
       const under = bot.blockAt(bot.entity.position.floored().offset(0, -1, 0));
       if (under?.boundingBox !== 'block' || nextToLava(under.position)) break;
+      check();
       if (nearestHostile(4)) return { ok: false, error: 'a monster came within 4 blocks while digging in' };
       const tool = bot.pathfinder.bestHarvestTool(under);
       if (tool) await bot.equip(tool, 'hand');
@@ -787,6 +795,19 @@ export function make(bot, signal, memory = {}) {
       }
     }
     return enclosed() ? { ok: true, note: `${start.y - feet.y} blocks down and closed` } : { ok: false, error: 'the hole is not closed' };
+  }
+
+  // The cells of the base's room that are shut off from its doorway, as [dx, dz] from the
+  // middle. A cell can be walked when nothing solid is at foot or head height. extra: a cell
+  // to count as taken, to ask "what if something were put here?" before it is.
+  function roomShutIn(c, extra = null) {
+    const walkable = new Set();
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      if (extra && extra[0] === dx && extra[1] === dz) continue;
+      if (!solid(c.offset(dx, 0, dz)) && !solid(c.offset(dx, 1, dz))) walkable.add(`${dx},${dz}`);
+    }
+    walkable.add('2,0');   // the doorway, which is opened from inside when it is closed
+    return shutIn(walkable, [2, 0]);
   }
 
   // Put a carried thing on the floor of one exact cell. Looks at the world after, not the reply.
@@ -841,32 +862,71 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, dug };
   }
 
-  // Get into the nearest bed at the first moment the game allows it, then get up again.
-  // The player's own bed when it remembers one, and it is still there; else the nearest.
-  // (Turn 7: another player's bed stood 23 blocks from the base and was found first.)
-  async function sleepInBed(beforeBed = null) {
-    const own = memory.places?.bed && bot.blockAt(new Vec3(memory.places.bed.x, memory.places.bed.y, memory.places.bed.z));
-    const bed = own?.name?.endsWith('_bed') ? own : bot.findBlock({ matching: (b) => b.name.endsWith('_bed'), maxDistance: 24 });
-    if (!bed) return { ok: false, error: 'no bed within 24 blocks' };
-    await walk(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), 60000, 'walking to the bed');
-    if (beforeBed) await beforeBed();
-    const deadline = Date.now() + 70000;
-    while (bot.time.timeOfDay > 11000 && bot.time.timeOfDay < 12541 && Date.now() < deadline) { check(); await sleep(50); }
-    const time = bot.time.timeOfDay;
+  // Out of bed. The library's own way sends this game version a number where it wants a name
+  // (26.1 calls the action "stop_sleeping"; the library sends 2, which is "stop sprinting"
+  // here), so for a day and a half the player could only wait for the morning.
+  async function getUp() {
+    if (!bot.isSleeping) return true;
     try {
-      await within(bot.sleep(bot.blockAt(bed.position)), 8000, 'getting into bed');
+      bot._client.write('entity_action', { entityId: bot.entity.id, actionId: 'stop_sleeping', jumpBoost: 0 });
     } catch (error) {
-      return { ok: false, error: `${error.message} (time ${time})` };
+      await bot.wake().catch(() => {});
     }
-    // Getting up does nothing on this version of the game, so wait for the morning: with one
-    // sleeper enough to end the night it comes in a few seconds, and otherwise the skill's
-    // own time limit ends the wait.
-    await sleep(3000);
-    for (let waited = 0; waited < 60 && bot.isSleeping; waited++) { check(); await sleep(500); }
-    return { ok: true, at: round(bed.position), time, upAt: bot.time.timeOfDay };
+    for (let waited = 0; waited < 20 && bot.isSleeping; waited++) await sleep(150);
+    return !bot.isSleeping;
   }
 
-  return { stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  // Get into bed, the player's own when it remembers one and it is still there. The night
+  // ends when enough players are asleep, and how many that takes is the world's rule, not the
+  // player's. So it waits; if the night goes on, it asks the others in chat, three times; and
+  // if they still are not in bed it says so and gets up (CT, 2026-10-04: "if they don't after
+  // 3 chat messages, you should say 'fine screw it I'm going mining then'").
+  //   beforeBed: something to do once it stands by the bed.   say: how to speak in chat.
+  async function sleepInBed(beforeBed = null, say = null) {
+    const stillNight = () => bot.time.timeOfDay >= 12541 && bot.time.timeOfDay <= 23458;
+    let time = bot.time.timeOfDay;
+    let at = null;
+    if (!bot.isSleeping) {
+      const own = memory.places?.bed && bot.blockAt(new Vec3(memory.places.bed.x, memory.places.bed.y, memory.places.bed.z));
+      const bed = own?.name?.endsWith('_bed') ? own : bot.findBlock({ matching: (b) => b.name.endsWith('_bed'), maxDistance: 24 });
+      if (!bed) return { ok: false, error: 'no bed within 24 blocks' };
+      at = round(bed.position);
+      await walk(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), 60000, 'walking to the bed');
+      if (beforeBed) await beforeBed();
+      const deadline = Date.now() + 70000;
+      while (bot.time.timeOfDay > 11000 && bot.time.timeOfDay < 12541 && Date.now() < deadline) { check(); await sleep(50); }
+      time = bot.time.timeOfDay;
+      try {
+        await within(bot.sleep(bot.blockAt(bed.position)), 8000, 'getting into bed');
+      } catch (error) {
+        return { ok: false, error: `${error.message} (time ${time})` };
+      }
+    }
+    const waitForMorning = async (seconds) => {
+      for (let waited = 0; waited < seconds * 2 && bot.isSleeping && stillNight(); waited++) { check(); await sleep(500); }
+      return !bot.isSleeping || !stillNight();
+    };
+    if (await waitForMorning(8)) return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: 0 };
+    const others = Object.keys(bot.players).filter((name) => name !== bot.username);
+    if (!others.length || !say) {
+      await waitForMorning(40);
+      return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: 0 };
+    }
+    const asks = [
+      `${others.join(', ')}: could you get into a bed, please? I am in mine, and the night ends when we are all asleep.`,
+      `Still in bed and still night. ${others.join(' and ')}, a bed each and it is morning.`,
+      'Last time of asking: bed, please.',
+    ];
+    for (let asked = 1; asked <= asks.length; asked++) {
+      say(asks[asked - 1]);
+      if (await waitForMorning(20)) return { ok: true, at, time, upAt: bot.time.timeOfDay, asked };
+    }
+    say('Fine, screw it, I\'m going mining then.');
+    const up = await getUp();
+    return { ok: true, at, time, upAt: bot.time.timeOfDay, asked: asks.length, gaveUp: true, up };
+  }
+
+  return { roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
 }

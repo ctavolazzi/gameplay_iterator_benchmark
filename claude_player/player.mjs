@@ -47,6 +47,9 @@ async function serve(gamePort, startAuto) {
   const saveMemory = () => writeFileSync(MEMORY, JSON.stringify(memory, null, 1));
   // Deaths are counted from the journal, which has all of them: the count kept in memory only
   // began with the memory file, and read 17 when the server's log had 21. CT sees this number.
+  memory.pass = null;
+  delete memory.nightPass;   // the two timestamps that passes used to be, set from five places
+  delete memory.brave;
   if (existsSync(JOURNAL)) memory.deaths = readFileSync(JOURNAL, 'utf8').split('\n').filter((line) => line.includes('"kind":"death"')).length;
   const recent = [];
   let seq = 0;
@@ -181,6 +184,9 @@ async function serve(gamePort, startAuto) {
     const before = { carried: carried(), health: bot.health, where: bot.entity.position.clone(), earned: Object.keys(earned) };
     const started = Date.now();
     current = { name: step.skill, args: step.args ?? {}, started, controller, notes: [], goal: step.goal ?? null };
+    // A step may carry a pass: leave to be out after dark (night), or to walk past what would be
+    // run from (brave). It lasts exactly as long as the step. This is the only place it is set.
+    memory.pass = step.pass ?? null;
     const timer = setTimeout(() => controller.abort(new Error(`out of time after ${timeout} s`)), timeout * 1000);
     let result;
     try {
@@ -194,6 +200,7 @@ async function serve(gamePort, startAuto) {
       result = { ok: false, error: String(error?.message ?? error).slice(0, 300) };
     } finally {
       clearTimeout(timer);
+      memory.pass = null;
       if (bot?.entity) halt();
     }
     const { gained, lost } = diffCarried(before.carried, carried());
@@ -203,6 +210,7 @@ async function serve(gamePort, startAuto) {
       moved: bot.entity ? Math.round(bot.entity.position.distanceTo(before.where)) : null,
       advancements: Object.keys(earned).filter((name) => !before.earned.includes(name)),
       ...(step.goal && { goal: step.goal, why: step.why }),
+      ...(step.pass && { pass: step.pass }),
       ...(current.notes.length && { notes: current.notes }) });
     lastSkill = row;
     current = null;
@@ -267,6 +275,7 @@ async function serve(gamePort, startAuto) {
       lastCarried = carried();
       const [lib, reflexes] = [await fresh('lib.mjs'), await fresh('reflexes.mjs')];
       await reflexes.tick({ bot, api: lib.make(bot, null, memory), state: reflexState, memory, busy: current?.name ?? null, event,
+        makeApi: (signal) => lib.make(bot, signal, memory),
         interrupt: (reason) => current?.controller.abort(new Error(`reflex: ${reason}`)) });
     } catch (error) {
       problem('reflex_error', error);

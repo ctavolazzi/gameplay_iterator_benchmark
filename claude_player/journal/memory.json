@@ -1,0 +1,140 @@
+{
+ "blocked": {
+  "sleep:": {
+   "fails": 5,
+   "error": "already sleeping (time 19625)",
+   "until": 1791121139085
+  }
+ },
+ "explored": {
+  "west": 31,
+  "east": 31,
+  "north": 44,
+  "south": 17
+ },
+ "thought": {
+  "at": "2026-10-04T13:47:34.640Z",
+  "goal": "home by dusk",
+  "step": "goto {\"x\":-352,\"z\":459,\"range\":6}",
+  "why": "to be in bed at dusk",
+  "stuck": {}
+ },
+ "home": {
+  "x": -352,
+  "y": 66,
+  "z": 459
+ },
+ "streak": {
+  "sig": "goto:",
+  "n": 8
+ },
+ "heading": "east",
+ "places": {
+  "furnace": {
+   "x": -342,
+   "y": 40,
+   "z": 471
+  },
+  "bed": {
+   "x": -352,
+   "y": 59,
+   "z": 460
+  },
+  "cobblestone": {
+   "x": -278,
+   "y": 56,
+   "z": 421
+  },
+  "crafting_table": {
+   "x": -343,
+   "y": -15,
+   "z": 456
+  }
+ },
+ "slept": true,
+ "lastReply": 1791119937242,
+ "deaths": 21,
+ "base": {
+  "x": -352,
+  "y": 59,
+  "z": 459
+ },
+ "badTables": [
+  {
+   "x": -405,
+   "y": 67,
+   "z": 473
+  }
+ ],
+ "known": {
+  "lily_of_the_valley": {
+   "x": -368,
+   "y": 67,
+   "z": 521
+  }
+ },
+ "own": [
+  {
+   "name": "furnace",
+   "at": {
+    "x": -277,
+    "y": 56,
+    "z": 421
+   }
+  },
+  {
+   "name": "furnace",
+   "at": {
+    "x": -396,
+    "y": 67,
+    "z": 459
+   }
+  },
+  {
+   "name": "furnace",
+   "at": {
+    "x": -352,
+    "y": 59,
+    "z": 458
+   }
+  },
+  {
+   "name": "crafting_table",
+   "at": {
+    "x": -343,
+    "y": -15,
+    "z": 456
+   }
+  },
+  {
+   "name": "furnace",
+   "at": {
+    "x": -342,
+    "y": 40,
+    "z": 471
+   }
+  }
+ ],
+ "spawnBed": true,
+ "respawnSeen": 1791113523455,
+ "baseHas": {
+  "crafting_table": {
+   "x": -353,
+   "y": 59,
+   "z": 458
+  },
+  "furnace": {
+   "x": -352,
+   "y": 59,
+   "z": 458
+  },
+  "chest": {
+   "x": -351,
+   "y": 59,
+   "z": 458
+  }
+ },
+ "danger": [],
+ "noBedUntil": 1791121048279,
+ "pass": null
+}

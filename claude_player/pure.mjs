@@ -49,3 +49,27 @@ export function summarize(rows) {
   out.damage = +out.damage.toFixed(1);
   return out;
 }
+
+// Whether one cell of a small floor plan can be walked to from another. walkable is a Set of
+// "x,z" strings. Used before furniture is put down in the base: a chest in the wrong cell of
+// a 3 by 3 room shut the player in a corner for 28 minutes.
+export function reaches(walkable, from, to) {
+  const key = ([x, z]) => `${x},${z}`;
+  if (!walkable.has(key(from)) || !walkable.has(key(to))) return false;
+  const seen = new Set([key(from)]);
+  const queue = [from];
+  while (queue.length) {
+    const [x, z] = queue.shift();
+    if (x === to[0] && z === to[1]) return true;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const next = [x + dx, z + dz];
+      if (walkable.has(key(next)) && !seen.has(key(next))) { seen.add(key(next)); queue.push(next); }
+    }
+  }
+  return false;
+}
+
+// The cells of a floor plan that cannot be walked from to the way out. Empty when all can.
+export function shutIn(walkable, wayOut) {
+  return [...walkable].map((cell) => cell.split(',').map(Number)).filter((cell) => !reaches(walkable, cell, wayOut));
+}

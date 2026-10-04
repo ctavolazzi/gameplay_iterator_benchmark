@@ -19,8 +19,10 @@ written to play without a model in the loop, and the world is one persistent wor
 | `NOTES.md` | The record: the goal ladder, one row per turn of the loop, and what has been learned. |
 | `../data/claude_player/` | `journal.jsonl` (every step, hit, death, encounter, advancement), `memory.json` (what the brain remembers), `advancements.json`. Not in git. |
 
-Everything but `player.mjs` is loaded again when its file changes, so the player keeps
-playing while it is edited.
+`brain.mjs`, `planner.mjs`, `reflexes.mjs`, `lib.mjs`, `chat.mjs` and the skills are loaded
+again when their file changes, so the player keeps playing while it is edited. `player.mjs`
+and `pure.mjs` need the player restarted. A saved file is live at once: save what is called
+before what calls it.
 
 ## One turn
 
@@ -36,7 +38,8 @@ playing while it is edited.
    Look for deaths, damage, a step failing the same way twice, a goal that never moves.
 3. **Check the score against the game, not the journal.** Advancements count when the server's
    log says so: `grep "Claude has" runtime/minecraft-coop-26.1/logs/latest.log`.
-4. **Change one thing.** Take the worst thing step 2 showed and fix its cause in the file that
+4. **Change one thing.** A change to what the reflexes decide gets a test in
+   `tests/claude_reflexes.test.mjs` first, written from the journal rows that show the fault. Take the worst thing step 2 showed and fix its cause in the file that
    owns it. `node --check` it; planner changes run `node --test tests/claude_planner.test.mjs`.
    One change per turn where possible, so the next turn's journal shows what it did.
 5. **Watch it land**: `player.mjs wait 60`, and read whether the change did what was meant.
@@ -45,7 +48,10 @@ playing while it is edited.
 7. **Commit** this folder's changes when `npm test` passes, with
    `git commit -F msg -- claude_player tests/claude_player.test.mjs tests/claude_planner.test.mjs`.
    Only these paths. Other sessions have uncommitted work in this repository.
-8. **Schedule the next turn.**
+8. **Schedule the next turn.** Start `node claude_player/watch_events.mjs 1200 420` as a
+   background task: it ends on a death, an advancement, a person speaking, an error, or 7
+   minutes of nothing, and its ending is what starts the next turn. A timed wakeup is only a
+   fallback: two of them never ran.
 
 ## Rules
 

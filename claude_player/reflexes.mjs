@@ -1,127 +1,240 @@
-// What the player does without being asked. tick() runs four times a second, whether or
-// not a skill is running. state lasts as long as the process; state.holdUntil keeps the
-// brain and the queue from starting anything.
+// What the player does without being asked. Two parts, kept apart so that the first can be
+// tested without a game:
 //
-// Version 4 (turn 2). What each version learned, from the journal:
-//   1  hit back while carrying on with the skill, run when hurt: 5 hits taken in 6 s with a
-//      sword in the pack, then shot dead by a skeleton while running.
-//   2  stop the skill and fight with the best weapon: killed a zombie (Monster Hunter), then
-//      died to the next ones. Six zombies were within 20 blocks. Night in the open is the fault.
-//   3  at dusk dig a hole and close it: survived the rest of that night at full health. But it
-//      could not dig in from a treetop, where the world's spawn point is, and tried every 2 s.
-//   4  the hole is dug in real ground found nearby; a failed try waits longer each time; a
-//      fight starts only with something that can be seen; underground the night is for mining.
+//   decide(senses, state)   what to do, given what is sensed and what is remembered between
+//                           ticks. It touches nothing: it returns the act, the events to
+//                           journal, and the changes to state. tests/claude_reflexes.test.mjs
+//                           holds it against the situations that killed the player.
+//   tick(ctx)               senses the world, asks decide, and does what it says. It runs
+//                           four times a second, whether or not a skill is running.
+//
+// The rules, in order. Each was bought by the death or the stall named beside it in NOTES.md:
+//   1 air         out of breath with the head under water: go to the nearest air (deaths 4, 7, 9, 12)
+//   2 shelter     closed in at night: nothing outside matters
+//   3 run         from a creeper always; from anything else when there is no sword or axe (deaths 11, 13 to 20)
+//   4 dig in      at night under the open sky with nothing hostile within 8 blocks (deaths 1 to 3, 10)
+//   5 shield      up against whatever shoots, while it is out of reach
+//   6 fight       what comes close and can be seen, with the best sword; given up after 6 s
+//                 without a hit (death 21)
+//   7 eat         when hungry and idle
+//
+// state lasts as long as the process. state.holdUntil keeps the brain and the queue from
+// starting anything.
 
+export const R = { breathLow: 8, breathOk: 16, creeper: 6, runFrom: 10, runFar: 24, digClear: 8,
+  archerMax: 14, reach: 3.4, fightTouch: 2.5, fightStart: 6, fightLost: 14, giveUpMs: 6000 };
 
-export async function tick({ bot, api, state, memory, busy, event, interrupt }) {
-  const now = Date.now();
-  const me = bot.entity.position;
-  const foe = api.nearestHostile(12);
-  const distance = foe ? foe.position.distanceTo(me) : Infinity;
-  const health = +bot.health.toFixed(1);
+// senses: { now, health, food, breath, underWater, night, exposed, enclosed, busy, armed, shielded,
+//           canEat, foe: { id, name, distance, visible } | null, archer: the same | null,
+//           fightTarget: { distance } | null, pass: { night, brave }, where }
+// Returns { act, shield, interrupt, hold, events: [[kind, detail]], set, danger, flags }.
+export function decide(s, st) {
+  const out = { act: { kind: 'none' }, shield: null, interrupt: null, hold: 0, events: [], set: {}, danger: null, flags: {} };
+  const foe = s.foe;
+  const creeper = foe?.name === 'creeper';
+  const pass = s.pass ?? {};
+  const say = (kind, detail) => out.events.push([kind, detail]);
+  const stop = (reason) => { if (s.busy) out.interrupt = reason; };
 
-  if (foe) {
-    state.seen ??= {};
-    if (!state.seen[foe.id]) {
-      state.seen[foe.id] = now;
-      event('encounter', { foe: foe.name, distance: +distance.toFixed(1), health, busy, night: api.night() });
-      // Cave spiders come from a spawner in a mineshaft and keep coming: the place is left alone.
-      if (foe.name === 'cave_spider' && !api.dangerous(me)) {
-        (memory.danger ??= []).push({ ...api.round(me), r: 32, until: now + 3600000, why: 'cave spiders' });
-      }
-    }
+  if (foe && !st.seen?.[foe.id]) {
+    out.set.seen = { ...(st.seen ?? {}), [foe.id]: s.now };
+    say('encounter', { foe: foe.name, distance: +foe.distance.toFixed(1), health: s.health, busy: s.busy, night: s.night });
+    // Cave spiders come from a spawner in a mineshaft and keep coming: the place is left alone.
+    if (foe.name === 'cave_spider') out.danger = { r: 32, why: 'cave spiders' };
   }
 
   // A fight ends when the one being fought is no longer in the world, or has been lost.
-  if (state.fight) {
-    const target = bot.entities[state.fight.id];
-    if (!target || target.position.distanceTo(me) > 14) {
-      event('fight_over', { foe: state.fight.name, gone: !target, hits: state.fight.hits,
-        seconds: Math.round((now - state.fight.started) / 1000), health });
-      state.fight = null;
-      bot.pathfinder.setGoal(null);
-    }
+  let fight = st.fight ?? null;
+  if (fight && (!s.fightTarget || s.fightTarget.distance > R.fightLost)) {
+    say('fight_over', { foe: fight.name, gone: !s.fightTarget, hits: fight.hits, seconds: Math.round((s.now - fight.started) / 1000), health: s.health });
+    fight = null;
+    out.set.fight = null;
+    out.flags.clearGoal = true;
   }
 
-  // Air first. Two of the first four deaths were drowning: 2 health a second, in a flooded
-  // cave, while the skill went on digging. Under 10 of 20 breath: drop everything and swim up.
-  const breath = bot.oxygenLevel ?? 20;
-  // The last place it stood with a full breath is the way out of any water.
-  if (breath >= 20 && bot.entity.onGround && !api.wetAt(me.offset(0, 1.6, 0)) && !api.wetAt(me)) state.airSpot = me.clone();
-  // After a death by drowning the breath reading stays low until the game corrects it: only
-  // believe it with the head actually under water.
-  const headIn = bot.blockAt(me.offset(0, 1.6, 0))?.name ?? '';
-  const underWater = /water|bubble_column|kelp|seagrass/.test(headIn);
-  if (breath < 8 && underWater) {
-    if (!state.surfacing) {
-      state.surfacing = now;
-      if (busy) interrupt('out of breath');
-      event('surfacing', { breath, health, where: api.round(me), airSpot: state.airSpot ? api.round(state.airSpot) : null });
+  // 1 air. The reading stays low after a death by drowning, so it counts only under water.
+  if (s.breath < R.breathLow && s.underWater) {
+    if (!st.surfacing) {
+      out.set.surfacing = s.now;
+      stop('out of breath');
+      say('surfacing', { breath: s.breath, health: s.health, where: s.where });
     }
-    // Turn 4: swimming straight up did not get it out (it drowned holding the jump key), and
-    // holding the queue kept the walk out from starting. Walk to the remembered air instead.
-    state.holdUntil = now + 2000;
-    state.fight = null;
-    // Death 12: the remembered place was one step into the river. The nearest place with the
-    // head in air is now looked for in the world; the remembered one is the second choice.
+    out.set.fight = null;
+    out.hold = 2000;
+    out.act = { kind: 'surface' };
+    return out;
+  }
+  if (st.surfacing) {
+    if (s.breath < R.breathOk && s.underWater) { out.hold = 1500; out.act = { kind: 'surface' }; return out; }
+    say('breathing', { breath: s.breath, health: s.health, seconds: Math.round((s.now - st.surfacing) / 1000), where: s.where });
+    out.set.surfacing = 0;
+    out.flags.stopSwimming = true;
+  }
+
+  // 2 shelter.
+  if (s.enclosed) {
+    if (s.night && !st.sheltered) {
+      out.set.sheltered = true;
+      out.flags.rememberHome = true;
+      say('sheltered', { where: s.where, health: s.health });
+    }
+    out.set.fight = null;
+    return eat(s, st, out);
+  }
+  if (!s.night && st.sheltered) out.set.sheltered = false;
+
+  // 3 run. A pass for being brave covers everything but creepers: it was once set to get the
+  // player past zombies to its dropped things, and it walked it up to a creeper instead.
+  const mustRun = foe && ((creeper && foe.distance < R.creeper) || (!pass.brave && !s.armed && foe.distance < R.runFrom));
+  let running = st.fleeing ?? 0;
+  if (mustRun) {
+    stop(`backing away from a ${foe.name}`);
+    if (!running || s.now > running) say('flee', { foe: foe.name, distance: +foe.distance.toFixed(1), health: s.health });
+    running = s.now + 6000;
+    out.set.fleeing = running;
+    out.set.fight = null;
+    out.hold = 7000;
+  }
+  if (running && s.now < running) {
+    if (foe && foe.distance > R.runFar) out.set.fleeing = s.now;   // far enough: the night rule may dig in
+    else if (foe) out.act = { kind: 'run', from: foe.id };
+    return out;
+  }
+  if (st.fleeing) {
+    out.set.fleeing = 0;
+    out.flags.stopRunning = true;
+  }
+
+  // 4 dig in. Begun only with nothing hostile within 8 blocks: begun with a zombie 5 blocks
+  // off, it was hit 16 times while it dug. tick() runs it beside the other rules and stops
+  // it the moment one of them wants the player for something else.
+  const tooClose = foe && !creeper && foe.distance < R.digClear;
+  if (s.night && s.exposed && !tooClose && !pass.night && s.now > (st.nextDigIn ?? 0)) {
+    stop('night: digging in');
+    out.set.fight = null;
+    out.hold = 20000;
+    out.act = { kind: 'dig_in' };
+    return out;
+  }
+
+  // 5 shield.
+  const archer = s.archer;
+  if (s.shielded && archer && archer.visible && archer.distance > R.reach && archer.distance < R.archerMax && !fight) {
+    out.shield = 'up';
+    if (st.blockedFor !== archer.id) say('shield_up', { foe: archer.name, distance: +archer.distance.toFixed(1), health: s.health });
+    out.set.blockedFor = archer.id;
+    out.act = { kind: 'face', id: archer.id };
+  } else if (st.blocking) {
+    out.shield = 'down';
+  }
+
+  // 6 fight. Only with a sword or an axe; a creeper is never fought.
+  let begin = false;
+  if (!fight && s.armed && foe && !creeper && (foe.distance < R.fightTouch || (foe.distance < R.fightStart && foe.visible))) {
+    fight = { id: foe.id, name: foe.name, started: s.now, hits: 0 };
+    begin = true;
+    out.set.fight = fight;
+    stop(`fighting a ${foe.name}`);
+    say('fight', { foe: foe.name, health: s.health, night: s.night });
+  }
+  if (fight) {
+    out.hold = 2500;
+    if (!begin && s.now - Math.max(fight.started, fight.lastHitAt ?? 0) > R.giveUpMs) {
+      say('fight_given_up', { foe: fight.name, hits: fight.hits, health: s.health, where: s.where });
+      out.danger = { r: 28, why: `a ${fight.name} that could not be hit` };
+      out.set.fight = null;
+      out.set.fleeing = s.now + 6000;
+      out.hold = 7000;
+      out.act = { kind: 'none' };
+      return out;
+    }
+    out.act = { kind: 'fight', id: fight.id };
+    return out;
+  }
+
+  // 7 eat.
+  return out.act.kind === 'none' ? eat(s, st, out) : out;
+}
+
+// Eat when hungry and nothing else is going on; when starving, stop the skill for it. Health
+// only comes back at 18 food or more.
+function eat(s, st, out) {
+  const rested = s.now - (st.lastEat ?? 0) > 5000;
+  if (s.food <= 6 && s.busy && rested && s.canEat) out.interrupt = 'starving';
+  if ((s.food <= 14 || (s.health < 20 && s.food < 18)) && !s.busy && rested && s.canEat) {
+    out.set.lastEat = s.now;
+    out.hold = Math.max(out.hold, 3000);
+    out.act = { kind: 'eat' };
+  }
+  return out;
+}
+
+const ARCHERS = /^(skeleton|stray|bogged|pillager)$/;
+
+export async function tick({ bot, api, state, memory, busy, event, interrupt, makeApi }) {
+  const now = Date.now();
+  const me = bot.entity.position;
+  const distanceTo = (e) => e.position.distanceTo(me);
+  const sense = async (e, far) => (e ? { id: e.id, name: e.name, distance: distanceTo(e), visible: distanceTo(e) < far ? await api.canSee(e) : false } : null);
+
+  const foeEntity = api.nearestHostile(12);
+  const shielded = bot.inventory.slots[45]?.name === 'shield';
+  const archerEntity = shielded ? bot.nearestEntity((e) => ARCHERS.test(e.name ?? '') && distanceTo(e) < R.archerMax) : null;
+  const fightEntity = state.fight ? bot.entities[state.fight.id] : null;
+  // The last place it stood with a full breath and its head out of water: the second choice
+  // of a way out, after air found by looking.
+  const breath = bot.oxygenLevel ?? 20;
+  if (breath >= 20 && bot.entity.onGround && !api.wetAt(me.offset(0, 1.6, 0)) && !api.wetAt(me)) state.airSpot = me.clone();
+  // A pass belongs to the step that is running: player.mjs sets it when the step starts and
+  // clears it when the step ends. Nothing else writes it.
+  const pass = memory.pass ?? {};
+
+  const senses = {
+    now, busy, pass, breath, where: api.round(me),
+    health: +bot.health.toFixed(1), food: bot.food,
+    underWater: api.wetAt(me.offset(0, 1.6, 0)),
+    night: api.night(), exposed: api.exposed(), enclosed: api.enclosed() || api.snug(),
+    armed: !!(api.bestOf('_sword') ?? api.bestOf('_axe')), shielded, canEat: api.hasFood(),
+    foe: await sense(foeEntity, R.fightStart), archer: await sense(archerEntity, R.archerMax),
+    fightTarget: fightEntity ? { distance: distanceTo(fightEntity) } : null,
+  };
+  const d = decide(senses, state);
+
+  Object.assign(state, d.set);
+  for (const [kind, detail] of d.events) event(kind, detail);
+  if (d.interrupt) interrupt(d.interrupt);
+  if (d.hold) state.holdUntil = Math.max(state.holdUntil ?? 0, now + d.hold);
+  if (d.danger && !api.dangerous(me)) (memory.danger ??= []).push({ ...api.round(me), r: d.danger.r, until: now + 3600000, why: d.danger.why });
+  if (d.flags.rememberHome) memory.home ??= api.round(me.offset(0, 3, 0));
+  if (d.flags.clearGoal) bot.pathfinder.setGoal(null);
+  if (d.flags.stopSwimming) bot.setControlState('jump', false);
+  if (d.flags.stopRunning) { state.fleeFrom = null; state.fleeTurn = 0; bot.clearControlStates(); if (!busy) bot.pathfinder.setGoal(null); }
+
+  // A dig-in runs beside the ticks. Anything else the rules want comes first: it is stopped.
+  if (state.task && d.act.kind !== 'dig_in') {
+    state.task.controller.abort(new Error('something more urgent'));
+    try { bot.stopDigging(); } catch { /* not digging */ }
+    state.task = null;
+  }
+
+  if (d.shield === 'up' && !state.blocking) { bot.activateItem(true); state.blocking = true; }
+  if (d.shield === 'down' && state.blocking) { bot.deactivateItem(); state.blocking = false; }
+
+  const act = d.act;
+  if (act.kind === 'surface') {
     if (now - (state.airGoalAt ?? 0) > 3000) {
       state.airGoalAt = now;
       const air = api.airNear(10) ?? state.airSpot;
       if (air) bot.pathfinder.setGoal(new api.goals.GoalNear(air.x, air.y, air.z, 0));
       else bot.setControlState('jump', true);
     }
-    return;
-  }
-  if (state.surfacing) {
-    if (breath < 16 && underWater) { state.holdUntil = now + 1500; return; }
-    event('breathing', { breath, health, seconds: Math.round((now - state.surfacing) / 1000), where: api.round(me) });
-    state.surfacing = 0;
-    bot.setControlState('jump', false);
-  }
-
-  const weapon = api.bestOf('_sword') ?? api.bestOf('_axe') ?? api.bestOf('_pickaxe');
-  const creeper = foe?.name === 'creeper';
-  const enclosed = api.enclosed() || api.snug();
-  const night = api.night();
-
-  // In the closed hole nothing outside matters. Underground at night the brain may still mine.
-  if (enclosed) {
-    if (night && !state.sheltered) {
-      state.sheltered = true;
-      memory.home ??= api.round(me.offset(0, 3, 0));
-      event('sheltered', { where: api.round(me), health, time: bot.time.timeOfDay });
-    }
-    state.fight = null;
-    return eatIfHungry();
-  }
-  if (!night) state.sheltered = false;
-
-  // Back away: from a creeper, or from anything when badly hurt with nothing to fight with.
-  // Version 5 (turn 3): never a fist fight. With nothing to fight with it took 5 hits from one
-  // zombie at dawn and landed nothing that mattered. No weapon means keeping away.
-  // memory.brave: with nothing to lose and something to fetch, keep going past what would be run from.
-  // Turn 7: brave was set by hand for a fetch and it stopped the player backing away from a
-  // creeper, which blew up it, its bed and part of its base. A creeper is always backed away from.
-  // And only a sword or an axe counts as something to fight with: a pickaxe does not.
-  const brave = (memory.brave ?? 0) > now;
-  const armed = !!(api.find(/_sword$/) ?? api.find(/_axe$/));
-  const mustFlee = foe && ((creeper && distance < 6) || (!brave && !armed && distance < 10));
-  if (mustFlee) {
-    if (busy) interrupt(`backing away from a ${foe.name}`);
-    if (!state.fleeing || now > state.fleeing) event('flee', { foe: foe.name, distance: +distance.toFixed(1), health });
-    state.fleeing = now + 6000;
-    state.holdUntil = now + 7000;
-    state.fight = null;
-  }
-  if (state.fleeing && now < state.fleeing) {
-    // Turn 7: backing away by pathfinder did not get away. On this machine the path is still
-    // being thought about while the zombie arrives: eight deaths in 131 s, about 7 hits each, mostly standing.
-    // Running needs no path: face away, hold forward, sprint and jump. A zombie walks at less
-    // than half a sprint. If a second of running has not moved it, it turns a third of the way round.
-    if (foe) {
+  } else if (act.kind === 'run') {
+    // No path to think about: face away, hold forward, sprint and jump. If a second of running
+    // has not moved it, it turns a third of the way round.
+    const from = bot.entities[act.from];
+    if (from) {
       bot.pathfinder.setGoal(null);
-      const away = me.minus(foe.position);
-      away.y = 0;
+      const away = me.minus(from.position);
       const length = Math.hypot(away.x, away.z) || 1;
       let [dx, dz] = [away.x / length, away.z / length];
       const stuck = state.fleeFrom && now - state.fleeFrom.at > 1000 && me.distanceTo(state.fleeFrom.where) < 1;
@@ -133,104 +246,45 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt }) 
       bot.setControlState('forward', true);
       bot.setControlState('sprint', true);
       bot.setControlState('jump', true);
-      if (distance > 24) state.fleeing = now;   // far enough: stop running, and let the night rule dig in
     }
-    return;
-  }
-  if (state.fleeing) {
-    state.fleeing = 0;
-    state.fleeFrom = null;
-    state.fleeTurn = 0;
-    bot.clearControlStates();
-    if (!busy) bot.pathfinder.setGoal(null);
-  }
-
-  // Night under the open sky: into the ground, unless something is already in reach and there is
-  // a weapon to answer it with. A failed try waits longer before the next.
-  // Turn 7: it logged in at night with a zombie 5 blocks off, began digging in, and was hit 16
-  // times while it dug, in full iron armour with an iron sword in its pack: the dig-in runs to
-  // its end inside one tick, and nothing else is looked at meanwhile. A hole is now begun only
-  // with nothing hostile within 8 blocks, and is given up if something comes within 4.
-  const beingHit = foe && !creeper && distance < 8;
-  // memory.nightPass: the brain may ask for a short while in the open after dark, to finish a walk home.
-  if (night && api.exposed() && !beingHit && now > (state.nextDigIn ?? 0) && now > (memory.nightPass ?? 0)) {
-    state.fight = null;
-    if (busy) interrupt('night: digging in');
-    state.holdUntil = now + 20000;
-    const dug = await api.digIn().catch((error) => ({ ok: false, error: error.message }));
-    state.digFails = dug.ok ? 0 : (state.digFails ?? 0) + 1;
-    state.nextDigIn = Date.now() + Math.min(60000, 2000 * 2 ** state.digFails);
-    state.holdUntil = Date.now() + 1500;
-    if (dug.ok || state.digFails <= 3) {
-      event('dig_in', { ok: dug.ok, note: dug.note ?? dug.error, health: +bot.health.toFixed(1), where: api.round(bot.entity.position), time: bot.time.timeOfDay });
+  } else if (act.kind === 'dig_in') {
+    if (!state.task) {
+      const controller = new AbortController();
+      const task = { kind: 'dig_in', controller };
+      state.task = task;
+      const digger = makeApi ? makeApi(controller.signal) : api;
+      digger.digIn().catch((error) => ({ ok: false, error: error.message })).then((dug) => {
+        if (state.task === task) state.task = null;
+        if (controller.signal.aborted) return;   // stopped for something more urgent: not a failure of the digging
+        state.digFails = dug.ok ? 0 : (state.digFails ?? 0) + 1;
+        state.nextDigIn = Date.now() + Math.min(60000, 2000 * 2 ** state.digFails);
+        state.holdUntil = Date.now() + 1500;
+        if (dug.ok || state.digFails <= 3) {
+          event('dig_in', { ok: dug.ok, note: dug.note ?? dug.error, health: +bot.health.toFixed(1), where: api.round(bot.entity.position), time: bot.time.timeOfDay });
+        }
+      });
     }
-    return;
-  }
-
-  // The shield goes up against anything that shoots, while it is too far off to hit. The first
-  // 21 deaths had a shield in the other hand for several of them and it was never raised once.
-  // An arrow on a raised shield is also the game's Not Today, Thank You.
-  const shielded = bot.inventory.slots[45]?.name === 'shield';
-  const archer = shielded ? bot.nearestEntity((e) => /^(skeleton|stray|bogged|pillager)$/.test(e.name) && e.position.distanceTo(me) < 14) : null;
-  const archerFar = archer ? archer.position.distanceTo(me) : 0;
-  if (archer && archerFar > 3.4 && !state.fight && await api.canSee(archer)) {
-    await bot.lookAt(archer.position.offset(0, (archer.height ?? 1.9) * 0.8, 0), true);
-    if (!state.blocking) {
-      bot.activateItem(true);
-      state.blocking = now;
-      if (state.blockedFor !== archer.id) event('shield_up', { foe: archer.name, distance: +archerFar.toFixed(1), health });
-      state.blockedFor = archer.id;
+  } else if (act.kind === 'face') {
+    const who = bot.entities[act.id];
+    if (who) await bot.lookAt(who.position.offset(0, (who.height ?? 1.9) * 0.8, 0), true);
+  } else if (act.kind === 'fight') {
+    const target = bot.entities[act.id];
+    const weapon = api.bestOf('_sword') ?? api.bestOf('_axe');
+    if (target) {
+      if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand').catch(() => {});
+      const reach = distanceTo(target);
+      if (reach > 3) bot.pathfinder.setGoal(new api.goals.GoalFollow(target, 2), true);
+      if (reach <= R.reach && now - (state.lastHit ?? 0) > 600) {
+        if (state.blocking) { bot.deactivateItem(); state.blocking = false; }
+        await bot.lookAt(target.position.offset(0, (target.height ?? 1.8) * 0.6, 0), true);
+        bot.attack(target);
+        state.fight.hits += 1;
+        state.fight.lastHitAt = now;
+        state.lastHit = now;
+      }
     }
-  } else if (state.blocking) {
-    bot.deactivateItem();
-    state.blocking = 0;
-  }
-
-  // Fight what comes close and can be seen. The skill stops; nothing new starts until it is over.
-  let target = state.fight ? bot.entities[state.fight.id] : null;
-  if (!target && armed && foe && !creeper && (distance < 2.5 || (distance < 6 && await api.canSee(foe)))) target = foe;
-  if (target) {
-    if (!state.fight) {
-      if (busy) interrupt(`fighting a ${target.name}`);
-      state.fight = { id: target.id, name: target.name, started: now, hits: 0 };
-      event('fight', { foe: target.name, weapon: weapon?.name ?? 'hand', health, night });
-    }
-    state.holdUntil = now + 2500;
-    if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand').catch(() => {});
-    const reach = target.position.distanceTo(bot.entity.position);
-    if (reach > 3) bot.pathfinder.setGoal(new api.goals.GoalFollow(target, 2), true);
-    if (reach <= 3.4 && now - (state.lastHit ?? 0) > 600) {
-      if (state.blocking) { bot.deactivateItem(); state.blocking = 0; }
-      await bot.lookAt(target.position.offset(0, (target.height ?? 1.8) * 0.6, 0), true);
-      bot.attack(target);
-      state.fight.hits += 1;
-      state.fight.lastHitAt = now;
-      state.lastHit = now;
-    }
-    // Death 21: a cave spider in a mineshaft, 52 s of "fighting" with no hit landed while its
-    // bites and poison took 20 health. A fight that has not landed a hit for 6 s is not a
-    // fight: leave, and remember the place as one to keep away from for an hour.
-    if (now - Math.max(state.fight.started, state.fight.lastHitAt ?? 0) > 6000) {
-      event('fight_given_up', { foe: state.fight.name, hits: state.fight.hits, health, where: api.round(me) });
-      (memory.danger ??= []).push({ ...api.round(me), r: 28, until: now + 3600000, why: `a ${state.fight.name} that could not be hit` });
-      state.fight = null;
-      state.fleeing = now + 6000;
-      state.holdUntil = now + 7000;
-    }
-    return;
-  }
-
-  return eatIfHungry();
-
-  // Eat when hungry and nothing else is going on; when starving, stop the skill for it.
-  async function eatIfHungry() {
-    if (bot.food <= 6 && busy && now - (state.lastEat ?? 0) > 5000) interrupt('starving');
-    // Health only comes back at 18 food or more (turn 3: sat at 8.5 health with 17 food and meat in the pack).
-    if ((bot.food <= 14 || (bot.health < 20 && bot.food < 18)) && !busy && now - (state.lastEat ?? 0) > 5000) {
-      state.lastEat = now;
-      state.holdUntil = now + 3000;
-      const ate = await api.eat().catch((error) => ({ ok: false, error: error.message }));
-      if (ate.ok) event('ate', { food: ate.ate, hunger: bot.food });
-    }
+  } else if (act.kind === 'eat') {
+    const ate = await api.eat().catch((error) => ({ ok: false, error: error.message }));
+    if (ate.ok) event('ate', { food: ate.ate, hunger: bot.food });
   }
 }

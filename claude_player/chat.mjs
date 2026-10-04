@@ -58,6 +58,13 @@ export async function heard({ bot, memory, username, message, status, event, say
   } else if (/\b(resume|continue|carry on|go on|go ahead|keep going)\b/.test(text)) {
     delete memory.order;
     answer = `Carrying on: ${doing}.`;
+  } else if (/\b(go to (bed|sleep)|get (in|into|to) bed|bed ?time|time (for|to) (bed|sleep)|sleep now|please sleep|(can|could|will) (you|everyone|we|y'?all) (all )?(please )?(go to )?sleep)\b/.test(text) || /^\s*(claude[,:]?\s*)?(sleep|bed)[.!]*\s*$/.test(text)) {
+    // Every player has to be in a bed for the night to pass (the world's rule since 06:40 on
+    // 2026-10-04), so when someone asks, this player goes: it may be the one holding the night up.
+    memory.order = { kind: 'bed', player: username, until: now + 180000 };
+    memory.noBedUntil = 0;
+    stop();
+    answer = memory.places?.bed ? 'Going to bed.' : 'I have no bed just now, so I cannot. I will stay out of the way under ground.';
   } else if (/\b(come|follow|over here|to me)\b/.test(text)) {
     memory.order = { kind: 'come', player: username, until: now + 90000 };
     stop();
