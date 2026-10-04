@@ -834,6 +834,11 @@ export function make(bot, signal, memory = {}) {
     const keepClear = others();
     const earthAt = (at) => /^(grass_block|dirt|farmland)$/.test(nameAt(at) ?? '') && /^(air|short_grass|wheat)$/.test(nameAt(at.offset(0, 1, 0)) ?? '');
     let water = memory.farm?.water ? new Vec3(memory.farm.water.x, memory.farm.water.y, memory.farm.water.z) : null;
+    // A plot too far off to be seen is walked to, not given up: the first plot was 95 blocks
+    // from home, read as "no water there" from the base, and a second plot was begun.
+    if (water && nameAt(water) === null) {
+      await walk(new goals.GoalNear(water.x, water.y + 1, water.z, 6), 90000, 'walking to the plot').catch(() => check());
+    }
     if (water && nameAt(water) !== 'water') water = null;
     if (!water) {
       // With no place asked for, the bank nearest home that is good enough: the first plot was

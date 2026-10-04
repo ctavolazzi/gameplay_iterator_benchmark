@@ -71,6 +71,20 @@ export function decide(s, st) {
     out.flags.stopSwimming = true;
   }
 
+  // Buried: the head is inside a block (gravel or sand that fell while it dug under it). It
+  // digs its head free before anything else but air. Death 24, 09:52:39 on 2026-10-04: "Claude
+  // suffocated in a wall", 12 s of losing a point of health every half second while it dug coal
+  // 5 blocks from its base, and nothing in these rules knew what was happening.
+  if (s.buried) {
+    if (!st.buried) { stop('buried: digging its head out'); say('buried', { health: s.health, where: s.where }); }
+    out.set.buried = s.now;
+    out.set.fight = null;
+    out.hold = 2000;
+    out.act = { kind: 'unbury' };
+    return out;
+  }
+  if (st.buried) out.set.buried = 0;
+
   // 2 shelter.
   if (s.enclosed) {
     if (s.night && !st.sheltered) {
@@ -222,6 +236,9 @@ function waysFrom(api, me, foeAt, turned = 0) {
   });
 }
 
+// Whether a block fills its whole place in the world.
+const wholeBlock = (block) => !!block && block.shapes?.length === 1 && block.shapes[0].every((v, i) => v === (i < 3 ? 0 : 1));
+
 export async function tick({ bot, api, state, memory, busy, event, interrupt, makeApi }) {
   const now = Date.now();
   const me = bot.entity.position;
@@ -245,6 +262,8 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt, ma
   const senses = {
     now, busy, pass, breath, where: api.round(me),
     cornered: ways ? pickWay(ways.map((way) => way[2])) < 0 : false,
+    // Only a whole block counts: a doorway, a ladder or a slab over the head is not being buried.
+    buried: !bot.isSleeping && wholeBlock(bot.blockAt(me.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored())),
     health: +bot.health.toFixed(1), food: bot.food,
     underWater: api.wetAt(me.offset(0, 1.6, 0)),
     night: api.night(), exposed: api.exposed(), enclosed: api.enclosed() || api.snug(),
@@ -275,7 +294,15 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt, ma
   if (d.shield === 'down' && state.blocking) { bot.deactivateItem(); state.blocking = false; }
 
   const act = d.act;
-  if (act.kind === 'surface') {
+  if (act.kind === 'unbury') {
+    // The block the head is in is dug with whatever is in hand: what falls is gravel or sand,
+    // and both come away in under a second. If more falls, the next tick finds it.
+    bot.pathfinder.setGoal(null);
+    const head = bot.blockAt(me.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored());
+    if (head && head.diggable) {
+      try { await bot.dig(head, true); } catch { /* the next tick tries again */ }
+    }
+  } else if (act.kind === 'surface') {
     if (now - (state.airGoalAt ?? 0) > 3000) {
       state.airGoalAt = now;
       const air = api.airNear(10) ?? state.airSpot;

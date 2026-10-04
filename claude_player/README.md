@@ -193,20 +193,21 @@ is CT's and is never started, stopped or restarted from here.
 - **The world's spawn point is in a treetop**, and a bed only holds the spawn point if it has
   been slept in since it was last put down.
 
-## Score, from the server's logs, at 09:26 on 2026-10-04
+## Score, from the server's logs, at 09:58 on 2026-10-04
 
 12 advancements for `Claude`: Stone Age, Getting an Upgrade, Monster Hunter, Acquire
 Hardware, Isn't It Iron Pick, Suit Up, Sweet Dreams, A Seedy Place, Diamonds!, Voluntary
 Exile, Cover Me with Diamonds, Not Today, Thank You. Codex's player (`CodexAstra`, and
 `Codex` since 08:00:51) has 4 in the log, and fogsift 5.
 
-23 deaths: 12 to zombies, 4 drowned, 2 to creepers, a fall down its own shaft, and one each
-to a spider, a cave spider, a skeleton and a magma block. NOTES.md has each one and what it
-changed. The last two were at 09:04:52 and 09:21:19 on 2026-10-04.
+24 deaths: 12 to zombies, 4 drowned, 2 to creepers, a fall down its own shaft, gravel on its
+head, and one each to a spider, a cave spider, a skeleton and a magma block. NOTES.md has
+each one and what it changed. The last three were at 09:04:52, 09:21:19 and 09:52:39 on
+2026-10-04.
 Codex's player has died 31 times and fogsift 16.
 
 The challenge (`challenge.json`): since 08:00 on 2026-10-04, one point for each new
-advancement and minus one for each death. At 09:26: Claude minus 2, Codex minus 1.
+advancement and minus one for each death. At 09:58: Claude minus 3, Codex minus 1.
 `node claude_player/score.mjs` says what it is now.
 
 ## What is next

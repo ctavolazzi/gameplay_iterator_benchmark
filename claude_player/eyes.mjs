@@ -283,7 +283,14 @@ export async function look(ctx, args = {}) {
   for (let y = (bot.game?.minY ?? -64) + (bot.game?.height ?? 384) - 1; column && y >= (bot.game?.minY ?? -64) && !lightSent; y -= 4) {
     lightSent = (column.getSkyLight({ x: local.x, y, z: local.z }) ?? 0) > 0;
   }
-  const underground = lightSent && skyAtEye === 0;
+  // Under ground: no light from the sky at the eye, nor anywhere within 3 blocks round it or
+  // over it. Under a tree or an overhang by open ground the sky is still there to be seen.
+  let skyNear = skyAtEye;
+  for (let dx = -3; dx <= 3 && lightSent && skyNear === 0; dx += 3) for (let dz = -3; dz <= 3 && skyNear === 0; dz += 3) for (const dy of [0, 3]) {
+    const x = Math.floor(eye[0]) + dx, z = Math.floor(eye[2]) + dz;
+    skyNear = Math.max(skyNear, bot.world.getColumn(x >> 4, z >> 4)?.getSkyLight({ x: x & 15, y: local.y + dy, z: z & 15 }) ?? 0);
+  }
+  const underground = lightSent && skyNear === 0;
   const sky = sight.skyAt(hour, underground);
   const { isHostile } = await fresh('./lib.mjs');
   const near = creatures(bot, eye, far, isHostile);

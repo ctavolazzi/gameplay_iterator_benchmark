@@ -208,7 +208,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     memory.respawnSeen = memory.lastDeath.at;
     // Where it died under ground is kept away from for an hour: nothing there is fetched or dug.
     const died = memory.lastDeath.where;
-    if (died && died.y < 55) memory.danger.push({ ...died, r: 24, until: now + 3600000, why: 'died here' });
+    // Not by its own base: at 09:52 on 2026-10-04 it suffocated under gravel 5 blocks from its
+    // bed, and the mark kept it from its own things and from everything round its base.
+    const byHome = home && Math.hypot(died.x - home.x, died.z - home.z) < 40;
+    if (died && died.y < 55 && !byHome) memory.danger.push({ ...died, r: 24, until: now + 3600000, why: 'died here' });
     const at = memory.places?.bed;
     if (!at || Math.hypot(here.x - at.x, here.y - at.y, here.z - at.z) > 8) memory.spawnBed = false;
   }

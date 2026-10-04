@@ -165,3 +165,19 @@ test('death 23: cornered with a sword in hand it fights the creeper, and with ro
   // A creeper 9 blocks off is not yet a reason for either.
   assert.equal(decide(senses({ armed: true, cornered: true, foe: creeper(9) }), {}).act.kind, 'none');
 });
+
+test('death 24: with its head inside a block it digs its head out before anything else', () => {
+  // 09:52:27 on 2026-10-04: gravel came down on it while it dug coal. Health fell for 12 s.
+  const out = decide(senses({ buried: true, busy: 'collect', health: 19 }), {});
+  assert.equal(out.act.kind, 'unbury');
+  assert.equal(out.interrupt, 'buried: digging its head out');
+  assert.ok(out.events.some(([kind]) => kind === 'buried'));
+  // With a zombie in reach as well: the head first. It is said once, not every tick.
+  const hit = decide(senses({ buried: true, foe: zombie(2) }), { buried: 99000 });
+  assert.equal(hit.act.kind, 'unbury');
+  assert.deepEqual(hit.events.filter(([kind]) => kind === 'buried'), []);
+  // Out of breath under water still comes first.
+  assert.equal(decide(senses({ buried: true, breath: 4, underWater: true }), {}).act.kind, 'surface');
+  // Free again, the mark is cleared.
+  assert.equal(decide(senses({ buried: false }), { buried: 99000 }).set.buried, 0);
+});
