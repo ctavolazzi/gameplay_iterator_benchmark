@@ -88,14 +88,17 @@ shelter"; that was already 4 when it was written.)
 
 | 8 (03:54) | Read 26 minutes alone (03:27 to 03:53): 101 steps, 62 failed, no deaths, nothing earned. Changed: gaps are no longer closed with planks; `leave_base` opens the doorway from inside whatever it was closed with, and the brain uses it by day; the stall watchdog counts only walks that timed out, at most once in 10 minutes; `explore` says why it did not move. | The good part first: it slept in its bed at dusk twice (03:38:31 at game time 15358, 03:49:42 at 13290), "closed 2 gaps before bed", and was up at time 0 both times: one sleeper ends the night, so both nights were skipped. `take_back` ran 3 times in those 26 minutes, where it had run 175 times in 55 before `leaves()`. The bad part: one of the 2 gaps was closed with birch planks, planks are never dug through, and from 03:39 it was shut in its base for 14 minutes: "No path to the goal!" and the watchdog reconnecting 5 times to no purpose. After the change: "opened 2 blocks of the doorway" at 03:56:23, then a chicken hunted and cooked. |
 
+| 9 (04:19) | Read 22 minutes alone (03:57 to 04:19): 60 steps, 3 failed, no damage taken at all, no deaths, nothing earned. Changed: what stands in the base is remembered apart from what was last put down anywhere (`baseHas`); a new goal, The Parrots and the Bats, breeds two chickens with seeds when two are in sight (`breed`). | Its best stretch so far. Two more dusks slept through (04:00:16 at game time 12551, 04:11:38 at 13502) and the doorway opened each morning. Full iron armour and a shield made and put on, iron sword, iron pickaxe, a bucket, 3 diamonds, 475 cobblestone. Both hunts worked, so hunting is no longer the candidate. The fault this turn: 36 blocks down a mine it decided its base had no crafting table, because the table it had just put down in the mine had overwritten the record, and walked up to rebuild. After the change the repair it was already on finished ("put down crafting_table, furnace") and it went back to iron. The breeding goal has not run yet. |
+
 Settled at 03:24, as far as it goes: the player's process was restarted and the first walk
 worked (`goto` into the base, 13 blocks, where the walk to the bed had just timed out after
 60 s). So the fault was in the old connection's state after eight respawns in 131 s, not in
 the world. What exactly was wrong in it is not known. `player.mjs` now drops the connection
 after three walks in a row that go nowhere, and reconnects. It fired 5 times the same hour, each time for the wrong reason (see turn 8).
 
-Next candidate, from turn 8's journal: hunting. "the chicken got away after 0 hits" 5 times and
-a pig hunt out of time 3 times, against 2 hunts that worked.
+Next candidates: the shield is held and never raised (a skeleton's arrow on a raised shield is
+Not Today, Thank You, and skeletons have killed it twice); the 3 diamonds should become one
+pickaxe this time; nothing new has been earned since Diamonds! at 19:34 the day before.
 
 Earlier candidate, from the journal: `collect iron_ore` failed twice with "Took to long to
 decide path to goal! (the iron_ore 1 blocks away)". A block already within reach should be

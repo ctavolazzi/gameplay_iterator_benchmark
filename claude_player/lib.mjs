@@ -557,6 +557,33 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, hits, gained: diffCarried(before, carried()).gained };
   }
 
+  // Feed two animals that stand near each other, so that they breed. The proof that it worked
+  // is the game's advancement (The Parrots and the Bats), not this function's word.
+  async function breed(name, food) {
+    const held = () => find(new RegExp(`^${food}$`));
+    if ((carried()[food] ?? 0) < 2) return { ok: false, error: `need 2 ${food}, have ${carried()[food] ?? 0}` };
+    const from = bot.entity.position;
+    const all = Object.values(bot.entities).filter((e) => e.name === name && e.position.distanceTo(from) < 48);
+    let pair = null;
+    for (const a of all) for (const b of all) {
+      if (a.id < b.id && a.position.distanceTo(b.position) < 8 && (!pair || a.position.distanceTo(from) < pair[0].position.distanceTo(from))) pair = [a, b];
+    }
+    if (!pair) return { ok: false, error: `no two ${name}s within 8 blocks of each other (${all.length} in sight)` };
+    let fed = 0;
+    for (const animal of pair) {
+      check();
+      await walk(new goals.GoalFollow(animal, 2), 25000, `walking to a ${name}`).catch(() => {});
+      if (!bot.entities[animal.id] || animal.position.distanceTo(bot.entity.position) > 4.5 || !held()) continue;
+      await bot.equip(held(), 'hand');
+      await bot.lookAt(animal.position.offset(0, (animal.height ?? 0.7) * 0.5, 0), true);
+      await bot.activateEntity(animal);
+      fed += 1;
+      await sleep(600);
+    }
+    await sleep(6000);
+    return fed === 2 ? { ok: true, fed } : { ok: false, error: `fed ${fed} of 2 ${name}s` };
+  }
+
   // Break grass until seeds are carried. About one clump in eight drops them.
   // Turn 2: the first version walked to "look at" each clump, broke none in 150 s and said
   // nothing about why. This one walks next to the clump, and reports how many it broke.
@@ -790,7 +817,7 @@ export function make(bot, signal, memory = {}) {
     return { ok: true, at: round(bed.position), time, upAt: bot.time.timeOfDay };
   }
 
-  return { snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
+  return { breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
     unworn, wear, hunt, gatherSeeds, plantSeed, goals, Vec3, round, isHostile };
 }

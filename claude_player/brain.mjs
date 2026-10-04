@@ -140,11 +140,18 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   // The base is kept up. Turn 7: a creeper blew the bed out of the base, the next death put the
   // player back at the world's spawn point in a treetop, and nothing put the bed back because
   // every base goal stopped at "has slept once". What is remembered is checked against the world.
-  for (const thing of ['bed', 'crafting_table']) {
-    const at = memory.places?.[thing];
+  memory.baseHas ??= {};
+  // Turn 9: the base's table used to be whatever table was put down last, anywhere. Seed the
+  // new record from the old one once, when that old one really is in the room.
+  if (!memory.baseHas.crafting_table && memory.base && memory.places?.crafting_table?.y === memory.base.y
+    && Math.abs(memory.places.crafting_table.x - memory.base.x) <= 1 && Math.abs(memory.places.crafting_table.z - memory.base.z) <= 1) {
+    memory.baseHas.crafting_table = memory.places.crafting_table;
+  }
+  for (const [thing, where] of [['bed', memory.places], ['crafting_table', memory.baseHas]]) {
+    const at = where?.[thing];
     const name = at && fromHome < 40 ? api.nameAt(new api.Vec3(at.x, at.y, at.z)) : null;
     if (name && !(thing === 'bed' ? name.endsWith('_bed') : name === thing)) {
-      delete memory.places[thing];
+      delete where[thing];
       if (thing === 'bed') memory.spawnBed = false;
     }
   }
@@ -191,7 +198,7 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   function base() {
     if (!home) return null;
     // The first base is the room, the crafting table and the bed. The furnace follows the race.
-    const tableIn = memory.base && memory.places?.crafting_table?.y === memory.base.y;
+    const tableIn = memory.base && !!memory.baseHas?.crafting_table;
     const furnished = memory.base && tableIn;
     const bedToPlace = bedHad && !memory.places?.bed;
     if (furnished && !bedToPlace) return null;
@@ -259,6 +266,14 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['food', food],
     ['A Seedy Place', seedy],
     ['iron pickaxe', tool('iron_pickaxe')],
+    // The Parrots and the Bats: breed two animals. Chickens take seeds, and both are close to
+    // hand. Only when two chickens are in sight; it is not worth a search.
+    ['The Parrots and the Bats', () => {
+      if (earned.includes('The Parrots and the Bats') || world.night) return null;
+      if (world.creatures.filter((name) => name === 'chicken').length < 2) return null;
+      if ((have.wheat_seeds ?? 0) < 2) return plan('wheat_seeds', 2, world);
+      return open({ skill: 'breed', args: { animal: 'chicken', food: 'wheat_seeds' }, why: 'two chickens in sight and seeds in the pack', timeout: 90 });
+    }],
     ['Suit Up', item('iron_chestplate')],
     ['shield', item('shield')],
     ['iron sword', tool('iron_sword')],

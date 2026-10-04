@@ -40,7 +40,9 @@ export default async function buildBase({ bot, api, memory, note }) {
   for (const [item, cell] of Object.entries(spots)) {
     if (!api.carried()[item]) continue;
     const placed = await api.placeAt(item, cell);
-    if (placed.ok) { put.push(item); (memory.places ??= {})[item] = placed.at; } else note(`${item}: ${placed.error}`);
+    // What stands in the base is remembered apart from what was last put down anywhere: a table
+    // set down in a mine 36 blocks below once made the brain think the base had lost its own.
+    if (placed.ok) { put.push(item); (memory.baseHas ??= {})[item] = placed.at; } else note(`${item}: ${placed.error}`);
   }
   // The bed lies along the far wall. It is placed from the cell at its foot, facing along the wall.
   const bed = Object.keys(api.carried()).find((name) => name.endsWith('_bed'));
