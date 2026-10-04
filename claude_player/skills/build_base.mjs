@@ -36,7 +36,10 @@ export default async function buildBase({ bot, api, memory, note }) {
   }
 
   const put = [];
-  const spots = { crafting_table: c.offset(-1, 0, -1), furnace: c.offset(1, 0, -1), torch: c.offset(0, 0, -1), chest: c.offset(-1, 0, 0) };
+  // Everything stands along the north wall. The middle row and the corner at the foot of the
+  // bed are the way from the bed to the doorway and are kept clear: a chest put in the middle
+  // of the west wall shut the player in that corner for 28 minutes (turn 13).
+  const spots = { crafting_table: c.offset(-1, 0, -1), furnace: c.offset(0, 0, -1), chest: c.offset(1, 0, -1) };
   for (const [item, cell] of Object.entries(spots)) {
     if (!api.carried()[item]) continue;
     const placed = await api.placeAt(item, cell);

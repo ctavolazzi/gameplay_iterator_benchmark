@@ -242,6 +242,14 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   // In order of how much each matters. A goal returns null when it is done.
   const goals = [
     ['wear', () => (api.unworn().length ? { skill: 'wear', args: {}, why: 'armour carried and not worn', timeout: 20 } : null)],
+    // A full pack stops everything that makes or picks up a thing. Away from the base's chest,
+    // what is not worth a place is thrown away.
+    ['room in the pack', () => {
+      if (bot.inventory.emptySlotCount() > 1) return null;
+      const b = memory.base;
+      const atChest = memory.baseHas?.chest && b && Math.abs(here.x - b.x) <= 3 && Math.abs(here.z - b.z) <= 3 && Math.abs(here.y - b.y) <= 2;
+      return atChest ? null : open({ skill: 'drop_junk', args: {}, why: 'the pack is full', timeout: 30 });
+    }],
     ['recover', recover],
     // During the race the bed came before tools. It is won; a bed that is carried still goes back first.
     ...(bedHad && !memory.places?.bed ? [['base', base]] : []),
@@ -353,7 +361,12 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   if (!world.night) {
     let step = null;
     if (!world.exposed && world.y < world.surfaceY - 6) step = open({ skill: 'surface', args: {}, why: 'nothing left to do down here', timeout: 600 });
-    else if (home && fromHome > 120) step = { skill: 'goto', args: { x: home.x, z: home.z, range: 8 }, why: 'far enough from home', timeout: 300 };
+    else if (home && fromHome > 120) {
+      // Turn 13: it walked 120 blocks north, came home, and walked the same 120 blocks north
+      // again. Each time it turns for home, the next look is a quarter turn round.
+      memory.heading = DIRECTIONS[(DIRECTIONS.indexOf(memory.heading ?? 'north') + 1) % 4];
+      step = { skill: 'goto', args: { x: home.x, z: home.z, range: 8 }, why: 'far enough from home', timeout: 300 };
+    }
     else step = heading({ skill: 'explore', args: {}, why: 'nothing left on the list: a look around', timeout: 90 }, memory, world);
     if (step) {
       memory.thought = { at: new Date().toISOString(), goal: 'look around', step: `${step.skill} ${JSON.stringify(step.args)}`, why: step.why, stuck };

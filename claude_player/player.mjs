@@ -45,6 +45,9 @@ async function serve(gamePort, startAuto) {
   const earned = readJson(EARNED, {});
   const memory = readJson(MEMORY, {});
   const saveMemory = () => writeFileSync(MEMORY, JSON.stringify(memory, null, 1));
+  // Deaths are counted from the journal, which has all of them: the count kept in memory only
+  // began with the memory file, and read 17 when the server's log had 21. CT sees this number.
+  if (existsSync(JOURNAL)) memory.deaths = readFileSync(JOURNAL, 'utf8').split('\n').filter((line) => line.includes('"kind":"death"')).length;
   const recent = [];
   let seq = 0;
   const event = (kind, detail = {}) => {

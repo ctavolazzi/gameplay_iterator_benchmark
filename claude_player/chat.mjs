@@ -18,6 +18,11 @@ export async function heard({ bot, memory, username, message, status, event, say
   if (OTHER_PLAYERS_THAT_ARE_PROGRAMS.test(username)) return;      // two programs answering each other never stop
   const text = message.toLowerCase();
   if (/^\s*@?codex\b/.test(text) && !/claude/.test(text)) return;  // said to someone else by name
+  // Said to another player by a short form of its name. Turn 13: "Astra, can you please actually
+  // play the game?" was meant for CodexAstra, and this player answered it.
+  const firstWord = /^\s*@?([a-z0-9_]{4,})\b[,:]?/.exec(text)?.[1];
+  const toAnother = firstWord && Object.keys(bot.players ?? {}).some((name) => name !== bot.username && name.toLowerCase().includes(firstWord));
+  if (toAnother && !/claude/.test(text)) return;
   const now = Date.now();
   if (now - (memory.lastReply ?? 0) < 1500) return;
   memory.lastReply = now;
