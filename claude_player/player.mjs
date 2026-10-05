@@ -166,6 +166,9 @@ async function serve(gamePort, startAuto) {
     // The server putting the player back where it was, again and again, is the two having
     // come apart while it is alive: 8 times in 15 s, and the connection is begun again.
     b.on('forcedMove', () => {
+      // Not in water: the server corrects a swimmer all the time (this fired twice in its
+      // first hour, both times in water, and a new connection changes nothing about that).
+      if (b.entity?.isInWater) return;
       const now = Date.now();
       forced = forced.filter((at) => now - at < 15000);
       forced.push(now);
