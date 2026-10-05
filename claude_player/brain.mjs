@@ -65,6 +65,9 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   } catch { atlas = null; }
   let landOf = null;
   try { landOf = await fresh('land.mjs'); } catch { landOf = null; }
+  // What the storehouse would take of the pack (skills/store.mjs says; the store goal asks).
+  let surplusOf = null;
+  try { surplusOf = (await fresh('skills/store.mjs')).surplusOf; } catch { surplusOf = null; }
 
   // In a treetop (the world's spawn point is one): down by the trunk before anything else.
   if (/_leaves$/.test(api.nameAt(bot.entity.position.floored().offset(0, -1, 0)) ?? '') && api.heightAboveGround() > 4) {
@@ -439,6 +442,12 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       // hall's chests and its planks were each put away between two steps of the job.
       if ((memory.works ?? []).some((w) => !w.done && (w.kind === 'hall' || w.kind === 'build'))) return null;
       if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      // Only with something to put away: a pack full of what is kept on the player (tools, food,
+      // a working amount of wood and stone) sent it to the storehouse six times for nothing.
+      if (surplusOf) {
+        const best = ['_pickaxe', '_sword', '_axe', '_hoe', '_shovel'].map((ending) => api.bestOf(ending)?.name).filter(Boolean);
+        if (!surplusOf(bot.inventory.items(), best, Object.fromEntries(api.spares()).diamond ?? 0).length) return null;
+      }
       const far = Math.hypot(here.x - house.door.outside.x, here.z - house.door.outside.z);
       const free = bot.inventory.emptySlotCount();
       if (far > 120 || !(free <= 4 || (far < 24 && free <= 12))) return null;
