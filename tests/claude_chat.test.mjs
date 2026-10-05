@@ -64,6 +64,35 @@ const world = (over = {}) => {
   return { call, out, journal, memory };
 };
 
+test('work on the land asked for in chat by a person becomes jobs where they stand; a program is not obeyed', async () => {
+  const w = world();
+  await w.call('fogsift', 'Claude can you build a farm here and chop down those trees');
+  assert.deepEqual(w.memory.works.map((job) => [job.kind, job.by, job.near]), [['farm', 'fogsift', { x: -340, z: 460 }], ['trees', 'fogsift', { x: -340, z: 460 }]]);
+  assert.match(w.out[0], /^On my list, fogsift: a farm.*the trees felled whole/);
+  assert.ok(w.journal.some(([kind, detail]) => kind === 'order' && detail.kind === 'work' && detail.jobs.length === 2));
+  // Asked again from the same place, it is the same job and is not added twice.
+  w.memory.lastReply = 0;
+  await w.call('fogsift', 'please build a farm');
+  assert.equal(w.memory.works.length, 2);
+  assert.match(w.out[1], /on my list already/);
+  // The bigger base, in the words it was first asked for in.
+  w.memory.lastReply = 0;
+  await w.call('fogsift', 'Claude can you build a bigger base?');
+  assert.deepEqual(w.memory.works.map((job) => job.kind), ['farm', 'trees', 'hall']);
+  // Codex's player asking for the same is told a fact or passed on, never given a job.
+  const c = world();
+  await c.call('Codex', 'Claude, can you build a farm for me?');
+  assert.equal(c.memory.works, undefined);
+});
+
+test('"how far are you from bed" is answered in blocks and seconds', async () => {
+  // Where the player was when fogsift asked from his bed at 21:13 on 2026-10-04.
+  const w = world({ hour: 15000, at: vec(-373, 8, 523) });
+  await w.call('fogsift', 'How far are you from bed?');
+  assert.match(w.out[0], /^66 blocks from my bed and 51 under it: about \d+ s away\. The night has \d+ s left/);
+  assert.equal(w.memory.order, undefined, 'a question about the bed is not an order to go to it');
+});
+
 test('asked to sleep beside its bed at night, it goes; from deep in the mine it says it cannot', async () => {
   const near = world({ hour: 14000 });
   await near.call('fogsift', 'Everybody go to sleep');

@@ -4,7 +4,7 @@
 // each block, not at the reply. args: { x1, z1, x2, z2, level: 65, seconds: 300, depth: 8 }
 const UNDER = /^(cobblestone|cobbled_deepslate|diorite|andesite|granite|tuff|stone|dirt)$/;
 
-export default async function fillLand({ bot, api }, { x1, z1, x2, z2, level = 65, seconds = 300, depth = 8, anyTop = false }) {
+export default async function fillLand({ bot, api }, { x1, z1, x2, z2, level = 65, seconds = 300, depth = 8, anyTop = false, skip = [] }) {
   if (![x1, z1, x2, z2, level].every(Number.isInteger)) return { ok: false, note: 'say the corners and the level: x1, z1, x2, z2, level' };
   const [xa, xb, za, zb] = [Math.min(x1, x2), Math.max(x1, x2), Math.min(z1, z2), Math.max(z1, z2)];
   const until = Date.now() + Math.max(10, Math.min(880, Number(seconds) || 300)) * 1000;
@@ -18,6 +18,10 @@ export default async function fillLand({ bot, api }, { x1, z1, x2, z2, level = 6
     let wetColumns = 0;
     for (let x = xa; x <= xb; x++) for (let z = za; z <= zb; z++) {
       if (solid(new Vec3(x, level, z))) continue;
+      // skip: rectangles [xa, za, xb, zb] left as they are (the stairs' opening, the ground
+      // over a room whose roof has a way in). A hole deeper than `depth` is left too: it may
+      // be the way into something.
+      if (skip.some(([a, b, c, d]) => x >= a && x <= c && z >= b && z <= d)) continue;
       let floor = level - 1;
       while (floor > level - depth && !solid(new Vec3(x, floor, z))) floor -= 1;
       const column = [];

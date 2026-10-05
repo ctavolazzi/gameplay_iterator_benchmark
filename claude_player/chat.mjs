@@ -204,7 +204,7 @@ export async function heard({ bot, memory, username, message, status, event, say
     // becomes a job by where the person stands; skills/work.mjs chooses the ground and does
     // it a piece at a time by day. The same kind of work asked for again nearby is the same job.
     const land = await load('./land.mjs');
-    const at = them ? them.position.floored() : null;
+    const at = them ? { x: Math.floor(them.position.x), y: Math.floor(them.position.y), z: Math.floor(them.position.z) } : null;
     memory.works ??= [];
     const added = [];
     for (const [i, job] of land.asksFor(message).entries()) {

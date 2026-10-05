@@ -210,7 +210,7 @@ Each one is from the journal, with the turn it came from.
 ## Open
 
 - The mine has no way down of its own. The player still goes down from wherever it stands, and comes up through whatever is over it; the hall's shell is guarded, the ground round it is not. A shaft from the hall, with a ladder, is the next piece of the base.
-- The holes in the ground over and west of the base (x -354 to -347, z 458 to 468, down to y 56) and the creeper's crater by the farm's north-west corner are not filled. `fill_land` would also fill the stairs' opening: it wants a list of cells to leave open first.
+- The shallow holes west and south of the base were filled at 00:13 on 2026-10-05 (89 blocks, with stone; `fill_land` now takes `skip` and leaves a hole deeper than `depth` alone), and the creeper's crater by the farm (2). Not filled: the ground over the bedroom itself (its roof has a way in), and the hollow east of the farm where the first storehouse site was levelled (x -324 to -316, z 473 to 481, 2 deep), which wants about 160 blocks.
 - A row of 7 cobblestone at y 73, x -359 to -354, z 470 to 471, ends in the air north of fogsift's treehouse. Nobody knows whose it is, so it stays until CT says.
 - The fourth chest of the hall is not in (its cell has the old wheat's farmland by it).
 - The farm is tended (`skills/tend.mjs`); nothing yet breeds animals there or grows anything but wheat.
