@@ -303,6 +303,13 @@ export async function tick({ bot, api, state, memory, busy, event, interrupt, ma
       try { await bot.dig(head, true); } catch { /* the next tick tries again */ }
     }
   } else if (act.kind === 'surface') {
+    // Up, whatever else: in water the jump key swims up, and it needs no path. Death 25
+    // (22:17:37 on 2026-10-04): out of breath one block under the surface of a lake, a path to
+    // the nearest air was asked for and for 16 s the body did not move at all. So every tick,
+    // with nothing solid over the head, it swims up; and what is solid over it is dug.
+    const over = bot.blockAt(me.offset(0, 2, 0).floored());
+    if (!over || over.boundingBox !== 'block') bot.setControlState('jump', true);
+    else if (over.diggable && !bot.targetDigBlock) bot.dig(over, true).catch(() => { /* the next tick tries again */ });
     if (now - (state.airGoalAt ?? 0) > 3000) {
       state.airGoalAt = now;
       const air = api.airNear(10) ?? state.airSpot;

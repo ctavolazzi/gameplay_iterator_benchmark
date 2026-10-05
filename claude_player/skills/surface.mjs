@@ -2,7 +2,7 @@
 // No args. Turn 11: asked for in one piece from 60 blocks down with no pickaxe, it was thought
 // about for 280 s and not one block was climbed. A leg of 10 blocks is a small thing to plan,
 // and a leg that is climbed stays climbed when the time runs out.
-export default async function surface({ bot, api, memory, note }) {
+export default async function surface({ bot, api, memory, note, skill }) {
   const home = memory.home;
   const top = home ? home.y : 66;
   const startY = bot.entity.position.y;
@@ -18,6 +18,13 @@ export default async function surface({ bot, api, memory, note }) {
       why = `: ${error.message}`;
     });
     stalled = bot.entity.position.y - from < 3 ? stalled + 1 : 0;
+    // A leg the pathfinder could not decide on is cut by hand, a step at a time (climb.mjs):
+    // with empty hands it thinks about a climb through stone until its time is gone.
+    if (stalled && bot.entity.position.y < top - 2) {
+      const cut = await skill('climb', { toY: to, seconds: 150 });
+      note(cut.note);
+      if (bot.entity.position.y - from >= 3) stalled = 0;
+    }
   }
   if (home && bot.entity.position.y >= top - 2) {
     await api.walk(new api.goals.GoalNear(home.x, home.y, home.z, 3), 60000, 'walking home').catch((error) => { api.check(); note(error.message); });

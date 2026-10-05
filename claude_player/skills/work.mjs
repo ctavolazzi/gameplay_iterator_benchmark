@@ -92,6 +92,13 @@ export default async function work({ bot, api, memory, skill, note }, { id = nul
   if (job.kind === 'sow') {
     // Seeds come from grass. Whatever is carried is planted; then more grass is broken.
     const SEED = /^(wheat_seeds|carrot|potato|beetroot_seeds)$/;
+    // With 40 plants in, the field seeds itself: every harvest gives more seed than it takes,
+    // and skills/tend.mjs sows the bare earth from the pack. The grass near the farm was gone
+    // after the first day, and looking for more took the player 290 blocks from home.
+    const had = memory.farmField?.crops;
+    if (had && had.growing + had.ripe >= 40 && Date.now() - (memory.farmField.tendedAt ?? 0) < 900000) {
+      return finish(`${had.growing + had.ripe} of 160 blocks are growing, and the harvests will fill the rest.`);
+    }
     if (!api.find(SEED)) {
       const got = await skill('gather_seeds', { count: 12 });
       tell(`Seeds: ${got.note}`);

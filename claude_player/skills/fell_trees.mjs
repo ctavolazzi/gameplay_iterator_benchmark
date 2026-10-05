@@ -121,7 +121,12 @@ export default async function fellTrees({ bot, api }, { x1, z1, x2, z2, near = n
         if (!block || block.name === 'air') continue;
         if (MADE.test(block.name)) { made.push(at); continue; }
         if (x < xa || x > xb || z < za || z > zb || !SCAFFOLD.test(block.name)) continue;
-        if (open(at.offset(1, 0, 0)) && open(at.offset(-1, 0, 0)) && open(at.offset(0, 0, 1)) && open(at.offset(0, 0, -1))) out.push(at);
+        // A tower: air on all four sides. Or a bridge, or the stub of one: building stone or
+        // earth with two blocks of air under it (three such hung south of the storehouse at
+        // y 68, in a row, so that the middle one had neighbours and was not a tower).
+        const tower = open(at.offset(1, 0, 0)) && open(at.offset(-1, 0, 0)) && open(at.offset(0, 0, 1)) && open(at.offset(0, 0, -1));
+        const hanging = open(at.offset(0, -1, 0)) && open(at.offset(0, -2, 0));
+        if (tower || hanging) out.push(at);
       }
       return out.filter((at) => !made.some((m) => Math.abs(m.x - at.x) <= 2 && Math.abs(m.y - at.y) <= 3 && Math.abs(m.z - at.z) <= 2) && !byPerson(at));
     };

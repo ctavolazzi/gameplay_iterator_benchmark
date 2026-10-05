@@ -165,6 +165,12 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   function recover() {
     const death = memory.lastDeath;
     if (!death) return null;
+    // Not with empty hands. It wakes in its bed two steps from the chest, and after death 25
+    // it set off for a lake 130 blocks away with nothing, not even a pickaxe to cut a step
+    // with. What the chest holds is taken first (the goal "kit", below).
+    const room = memory.base;
+    const inRoom = room && Math.abs(bot.entity.position.x - 0.5 - room.x) <= 2.6 && Math.abs(bot.entity.position.z - 0.5 - room.z) <= 2.6 && Math.abs(bot.entity.position.y - room.y) <= 2;
+    if (inRoom && memory.baseHas?.chest && memory.chest && api.kitWants().length) return null;
     const age = now - death.at;
     const worth = Object.keys(death.lost ?? {}).some((name) => WORTH_GOING_BACK_FOR.test(name));
     if (age > 270000 || !worth || api.dangerous(death.where)) { delete memory.lastDeath; return null; }
