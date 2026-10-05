@@ -132,11 +132,24 @@ export default async function tend({ bot, api, memory }, { seconds = 200 } = {})
     error ??= failure.message;
   }
 
+  // Seed beyond two stacks is thrown down outside the gate: a full field gives about 33 more
+  // than it takes at every cutting, and after one night that was 13 places of the pack.
+  let thrown = 0;
+  try {
+    const seeds = api.carried().wheat_seeds ?? 0;
+    if (seeds > 128 && !isInside()) {
+      thrown = seeds - 64;
+      await api.within(bot.toss(bot.registry.itemsByName.wheat_seeds.id, null, thrown), 5000, 'throwing down spare seed');
+    }
+  } catch (failure) {
+    api.check();
+    thrown = 0;
+  }
   const now = count();
   const after = api.carried();
   field.tendedAt = Date.now();
   field.crops = now;
   const gained = ['wheat', 'wheat_seeds', 'bread', 'carrot', 'potato'].filter((n) => (after[n] ?? 0) !== (before[n] ?? 0)).map((n) => `${n} ${(after[n] ?? 0) - (before[n] ?? 0) > 0 ? '+' : ''}${(after[n] ?? 0) - (before[n] ?? 0)}`);
-  const note = `cut ${did.cut}, sowed ${did.sown}, tilled ${did.tilled}, baked ${did.bread} bread. The field now: ${now.growing} growing, ${now.ripe} ripe, ${now.bare} tilled and bare, ${now.dirt} gone back to dirt. The pack: ${gained.join(', ') || 'no change'}; the player ${isInside() ? 'inside' : 'outside'}${error ? `. Trouble: ${error}` : ''}`;
+  const note = `cut ${did.cut}, sowed ${did.sown}, tilled ${did.tilled}, baked ${did.bread} bread. The field now: ${now.growing} growing, ${now.ripe} ripe, ${now.bare} tilled and bare, ${now.dirt} gone back to dirt. The pack: ${gained.join(', ') || 'no change'}${thrown ? `, and ${thrown} spare seeds thrown down` : ''}; the player ${isInside() ? 'inside' : 'outside'}${error ? `. Trouble: ${error}` : ''}`;
   return { ok: !isInside() && (!error || did.cut + did.sown + did.tilled > 0), note: note.slice(0, 700), now };
 }

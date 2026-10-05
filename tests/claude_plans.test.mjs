@@ -15,6 +15,10 @@ test('what goes into the storehouse: the bulk, not the tools in use, the food, t
   assert.deepEqual(got, { oak_log: 95, spruce_log: 51, coal: 112, iron_pickaxe: 1, stone_pickaxe: 1, wooden_hoe: 1, oak_sapling: 30, white_banner: 1, diamond: 14 });
   // Chests carried are about to be put down, and a stack of stone is kept to build with.
   assert.deepEqual(surplusOf([{ name: 'chest', count: 4 }, { name: 'cobblestone', count: 64 }, { name: 'cobblestone', count: 30 }], [], 0), [['cobblestone', 30]]);
+  // The farm's own surplus: a stack of bread stays and the rest goes. Seed is never stored
+  // (tend.mjs throws down what is over two stacks).
+  assert.deepEqual(Object.fromEntries(surplusOf([{ name: 'bread', count: 64 }, { name: 'bread', count: 64 }, { name: 'bread', count: 7 }, { name: 'wheat_seeds', count: 64 }, { name: 'wheat_seeds', count: 40 }], [], 0)),
+    { bread: 71 });
   // With nothing to spare, nothing goes.
   assert.deepEqual(surplusOf([{ name: 'oak_log', count: 16 }, { name: 'diamond_pickaxe', count: 1 }, { name: 'bread', count: 5 }], ['diamond_pickaxe'], 0), []);
 });

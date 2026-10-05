@@ -7,9 +7,13 @@
 // remembered. No args.
 // (A chest carried is a chest about to be put down: the hall's four were made, put away in
 // the storehouse by the next goal, and made again.)
-const ALWAYS = /^(torch|chest|bucket|water_bucket|.*_bed|shield|wheat_seeds|beetroot_seeds|carrot|potato|cooked_.*|bread|apple|baked_potato)$/;
+// (Bread and seeds were kept whatever their number until the farm had run for a night: 135
+// loaves and 796 seeds, and one place left in the pack. A stack of each stays; see UP_TO.)
+// Seed is not stored at all: skills/tend.mjs throws down what is over two stacks. (The first
+// trip under this rule put 471 seeds in a chest, which is clutter moved and not cleared.)
+const ALWAYS = /^(torch|chest|bucket|water_bucket|.*_bed|shield|wheat_seeds|beetroot_seeds|carrot|potato|cooked_.*|apple|baked_potato)$/;
 const NOT_WORTH_A_PLACE = /^(diorite|andesite|granite|tuff|gravel|leaf_litter|rotten_flesh|cobbled_deepslate|flint|egg|feather)$/;
-const UP_TO = [[/_log$/, 16], [/_planks$/, 16], [/^stick$/, 16], [/^(coal|charcoal)$/, 16], [/^dirt$/, 32], [/^cobblestone$/, 64]];
+const UP_TO = [[/_log$/, 16], [/_planks$/, 16], [/^stick$/, 16], [/^(coal|charcoal)$/, 16], [/^dirt$/, 32], [/^cobblestone$/, 64], [/^bread$/, 64]];
 
 // [name, count] of what is carried beyond that.
 export function surplusOf(items, best = [], diamondsSpare = 0) {
