@@ -2,7 +2,7 @@
 // Every advancement the game has, read from the server's own jar: its name, what it asks
 // for, and which one it comes after. The curriculum (curriculum.mjs) is built on this list,
 // so that what the player goes for next comes from the game and not from a list written by
-// hand. Kept in data/claude_player/advancements.json, which is not in git.
+// hand. Kept in data/claude_player/advancement-list.json, which is not in git.
 //   node claude_player/advancements.mjs          read the jar, write the list, say how many
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -10,7 +10,10 @@ import { fileURLToPath } from 'node:url';
 import { unzip } from './textures.mjs';
 
 const JAR = fileURLToPath(new URL('../runtime/minecraft-coop-26.1/server.jar', import.meta.url));
-export const LIST = fileURLToPath(new URL('../data/claude_player/advancements.json', import.meta.url));
+// Its own file. It was first kept in advancements.json, which is where player.mjs keeps what
+// this player has earned: from 09:39 on 2026-10-04 the game's list of 125 lay over that
+// record, and for 15 hours the brain took the player to have earned nothing by name.
+export const LIST = fileURLToPath(new URL('../data/claude_player/advancement-list.json', import.meta.url));
 const bare = (name) => String(name).replace(/^minecraft:/, '');
 
 // The items a criterion is met by having, when having an item is what it asks. A tag (a

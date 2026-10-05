@@ -37,7 +37,9 @@ const FURNITURE = /^(crafting_table|furnace|chest|barrel|torch|wall_torch|ladder
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 // What is not worth a place in the chest or, past a stack of the building stones, in the pack.
 export const JUNK = /^(cobblestone|cobbled_deepslate|stone|tuff|diorite|andesite|granite|gravel|dirt|leaf_litter|feather|rotten_flesh|egg|pumpkin_seeds|flint|white_banner|ladder|.*_sapling)$/;
-const KEPT_ON_THE_PLAYER = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed|crafting_table|furnace|shield)$/;
+// Iron too, raw or smelted: on game day 79 the shield goal dug one ore, the walk home with the
+// diamonds put it in the chest as a spare, and the shield goal dug another, six times round.
+const KEPT_ON_THE_PLAYER = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed|crafting_table|furnace|shield|raw_iron|iron_ingot)$/;
 const WORN_SLOTS = [5, 6, 7, 8, 45];
 
 // What to take out of the chest to be fit to go out again: [[name, count]]. have is what the
@@ -143,12 +145,21 @@ export function make(bot, signal, memory = {}) {
   // and the treads of its stairs stay whole. They were made to close the pits by the base, and
   // one tread was dug away by a search for coal the same morning.
   const hall = memory.hall?.whole && memory.hall.c ? { c: memory.hall.c, steps: memory.hall.steps } : null;
-  if (movements && hall) movements.exclusionAreasBreak = [...movements.exclusionAreasBreak, (block) => (block.position && keptWhole(hall, block.position) ? 1000 : 0)];
+  // Guarded with the shell: the cells beside the stairs (closed against the pits; where they
+  // were closed with stone and not planks, the pathfinder went through one within the hour).
+  // Not guarded: the hatch, the one column under the hall's far corner (south-east). It is the
+  // way down to the mine and back, so that there is one, and it is not the lawn or a wall.
+  const beside = (at) => {
+    const j = at.z - (hall.c.z + 5);
+    return Math.abs(at.x - (hall.c.x + 6)) === 1 && j >= 0 && j < hall.steps && at.y >= hall.c.y + j - 1 && at.y <= Math.min(hall.c.y + j + 2, hall.c.y + hall.steps - 1);
+  };
+  const guarded = hall ? (at) => (keptWhole(hall, at) || beside(at)) && !(at.x === hall.c.x + 9 && at.z === hall.c.z + 3 && at.y < hall.c.y) : null;
+  if (movements && hall) movements.exclusionAreasBreak = [...movements.exclusionAreasBreak, (block) => (block.position && guarded(block.position) ? 1000 : 0)];
   // And not by anything else either. Every dig the player makes goes through bot.dig, so the
   // guard is put there, once for each connection: 25 minutes after the hall was whole, two
   // blocks of its floor were gone, cut from below by a skill that climbs out of a pit and
   // had never heard of a hall. (FelsenBerry calls this a digguard; RESEARCH.md.)
-  bot.claudeGuard = hall ? (at) => keptWhole(hall, at) : null;
+  bot.claudeGuard = guarded;
   if (!bot.claudeDigWrapped) {
     const dig = bot.dig.bind(bot);
     bot.dig = (block, ...rest) => (bot.claudeGuard && block?.position && bot.claudeGuard(block.position)

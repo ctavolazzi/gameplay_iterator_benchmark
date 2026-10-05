@@ -55,6 +55,11 @@ export default async function buildHall({ bot, api, memory }, { seconds = 600 } 
   if (steps === null) return { ok: false, note: 'no place within 24 stairs where the staircase comes out under the sky' };
   const plan = hallPlan(c, steps);
   const standOf = (j) => [x, c.y + j, c.z + 5 + j];
+  // The hatch: the one column under the hall's far corner (south-east) that is left open and
+  // unguarded. It is the way down to the mine and back (lib.mjs make() has the other half).
+  // Before it, the way to the mine from a closed hall was through a wall or up to the lawn.
+  const hatch = [c.x + 9, c.y - 1, c.z + 3];
+  const overHatch = (cell) => cell[0] === hatch[0] && cell[2] === hatch[2] && cell[1] <= c.y;
   // What must stay open: nothing is ever placed in these.
   const keepOpen = new Set([...plan.interior, ...plan.entrance, ...plan.bedroomDoor, ...plan.stairs.flatMap((s) => s.clear)].map((cell) => `${cell[0]},${cell[1]},${cell[2]}`));
 
@@ -144,7 +149,7 @@ export default async function buildHall({ bot, api, memory }, { seconds = 600 } 
     moves.canDig = false;
     moves.allow1by1towers = false;
     moves.scafoldingBlocks = [];
-    moves.exclusionAreasStep = [...(was.step ?? []), (b) => (inRoom(b.position) && !done.has(`${b.position.x},${b.position.z}`) ? 100 : 0)];
+    moves.exclusionAreasStep = [...(was.step ?? []), (b) => (inRoom(b.position) && (!done.has(`${b.position.x},${b.position.z}`) || overHatch([b.position.x, 0, b.position.z])) ? 100 : 0)];
     try {
       await api.within(bot.pathfinder.goto(new goals.GoalBlock(cell[0], cell[1], cell[2])), ms, 'moving in the hall');
     } catch (failure) {
@@ -210,13 +215,13 @@ export default async function buildHall({ bot, api, memory }, { seconds = 600 } 
           queue.push({ cell, parent: next.cell });
         }
       }
-      const whole = ({ cell }) => solid([cell[0], c.y - 1, cell[2]]) && [0, 1, 2].every((dy) => !solid([cell[0], c.y + dy, cell[2]]) || FURNITURE.test(name([cell[0], c.y + dy, cell[2]]) ?? ''));
+      const whole = ({ cell }) => (solid([cell[0], c.y - 1, cell[2]]) || overHatch(cell)) && [0, 1, 2].every((dy) => !solid([cell[0], c.y + dy, cell[2]]) || FURNITURE.test(name([cell[0], c.y + dy, cell[2]]) ?? ''));
       for (const next of order) {
         if (!time()) break;
         const { cell, parent } = next;
         if (whole(next)) { done.add(`${cell[0]},${cell[2]}`); continue; }
         if (far([cell[0], c.y + 1, cell[2]]) > 3.4 || far([cell[0], c.y - 1, cell[2]]) > 4.3) await moveTo(parent);
-        await fill([cell[0], c.y - 1, cell[2]]);
+        if (!overHatch(cell)) await fill([cell[0], c.y - 1, cell[2]]);
         for (const dy of [2, 1, 0]) await dig([cell[0], c.y + dy, cell[2]]);
         if (whole(next)) done.add(`${cell[0]},${cell[2]}`);
         else say('a cell of the room that could not be finished');
@@ -227,7 +232,7 @@ export default async function buildHall({ bot, api, memory }, { seconds = 600 } 
       stage = 'shell';
       const floorCells = order.map((o) => o.cell).filter((cell) => done.has(`${cell[0]},${cell[2]}`));
       for (let pass = 0; pass < 3 && time() && floorCells.length; pass++) {
-        const gaps = plan.shell.filter((cell) => !solid(cell) && !FURNITURE.test(name(cell) ?? ''));
+        const gaps = plan.shell.filter((cell) => !solid(cell) && !FURNITURE.test(name(cell) ?? '') && !overHatch(cell));
         if (!gaps.length) break;
         for (const gap of gaps) {
           if (!time()) break;
@@ -304,13 +309,15 @@ export default async function buildHall({ bot, api, memory }, { seconds = 600 } 
   // Furniture, to the check, is what cannot be walked through: a chest, a table, a bed. A torch
   // can be (the plan stands two of them on the stairs, and the first check called the stairs
   // blocked at the first one).
-  const faults = checkHall(plan, { open: (cell) => !solid(cell), solid, furniture: (cell) => /^(chest|crafting_table|furnace|.*_bed)$/.test(name(cell) ?? '') });
+  // The hatch is not a fault: an open floor there is what it is for.
+  const faults = checkHall(plan, { open: (cell) => !solid(cell), solid, furniture: (cell) => /^(chest|crafting_table|furnace|.*_bed)$/.test(name(cell) ?? '') })
+    .filter((fault) => !overHatch(fault.cell));
   const kinds = {};
   for (const fault of faults) kinds[fault.what.replace(/\d+/g, 'n')] = (kinds[fault.what.replace(/\d+/g, 'n')] ?? 0) + 1;
   const lit = plan.torches.filter((cell) => /torch/.test(name(cell) ?? '')).length;
   const chests = plan.chests.filter((cell) => name(cell) === 'chest').length;
-  const gaps = plan.shell.filter((cell) => !solid(cell) && !FURNITURE.test(name(cell) ?? '')).length + plan.stairs.filter((stair) => !solid(stair.floor)).length;
-  memory.hall = { c: { x: c.x, y: c.y, z: c.z }, steps, at: Date.now(), faults: faults.length, gaps, lit, chests, whole: faults.length === 0 };
+  const gaps = plan.shell.filter((cell) => !solid(cell) && !FURNITURE.test(name(cell) ?? '') && !overHatch(cell)).length + plan.stairs.filter((stair) => !solid(stair.floor)).length;
+  memory.hall = { c: { x: c.x, y: c.y, z: c.z }, steps, at: Date.now(), faults: faults.length, gaps, lit, chests, whole: faults.length === 0, hatch: { x: hatch[0], y: c.y, z: hatch[2] } };
   const problems = Object.entries(trouble).map(([what, n]) => `${what} x${n}`).join(', ');
   const note = `dug ${did.dug}, filled ${did.filled}, torches ${did.torches}, chests ${did.chests}. ${steps} stairs. `
     + `${faults.length ? `The check finds ${faults.length} faults (${Object.entries(kinds).map(([what, n]) => `${what} ${n}`).join(', ')})` : 'The check finds no fault: the room is whole, closed, and walked from the bedroom to the top of the stairs'}; `

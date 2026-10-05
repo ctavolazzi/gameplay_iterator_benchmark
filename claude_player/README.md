@@ -245,6 +245,14 @@ is CT's and is never started, stopped or restarted from here.
 - **A rule that picks blocks to destroy is run dry first.** `fell_trees` and `flatten` both take
   `"dry": true` and list what they would take. The sweep for "hanging" blocks dug 152 blocks
   out of the ground before it had one.
+- **Two files, two things.** `data/claude_player/advancements.json` is what this player has
+  earned (`{ title: when }`, written by `player.mjs`). The game's own list of advancements is
+  `advancement-list.json` (written by `advancements.mjs`). They shared a name for 15 hours and
+  the player forgot everything it had earned. If `status` shows `earned` as numbers, that has
+  happened again: the server's log has the truth (`grep "Claude has" runtime/minecraft-coop-26.1/logs/latest.log`).
+- **The hall is guarded on `bot.dig`**: its shell, its stairs' treads and the cells beside the
+  stairs cannot be dug by anything. The one way through its floor is the hatch at its
+  south-east corner (`memory.hall.hatch`), which is how the player goes to the mine and back.
 - **`canOpenDoors` ends the process.** The pathfinder's option for opening fence gates throws
   from its own tick after the gate is opened (RESEARCH.md has the lines). It ended the player
   at 20:03:35 on 2026-10-04. `player.mjs` now catches such an error and plays on, but leave the

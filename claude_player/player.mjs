@@ -44,7 +44,11 @@ async function serve(gamePort, startAuto) {
   const mineflayer = (await import('mineflayer')).default;
   const { pathfinder, Movements } = (await import('mineflayer-pathfinder')).default;
   mkdirSync(DATA, { recursive: true });
-  const earned = readJson(EARNED, {});
+  // What this player has earned: { title: when }. If the file holds anything else (for 15
+  // hours on 2026-10-04 it held the game's whole list, written there by advancements.mjs),
+  // the record is begun again and filled from the server's log as each is announced.
+  const read = readJson(EARNED, {});
+  const earned = read && typeof read === 'object' && !Array.isArray(read) && Object.values(read).every((when) => typeof when === 'string') ? read : {};
   const memory = readJson(MEMORY, {});
   const saveMemory = () => writeFileSync(MEMORY, JSON.stringify(memory, null, 1));
   // Deaths are counted from the journal, which has all of them: the count kept in memory only
