@@ -503,7 +503,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['The Parrots and the Bats', () => {
       if (earned.includes('The Parrots and the Bats') || world.night) return null;
       if (world.creatures.filter((name) => name === 'chicken').length < 2) return null;
-      if ((have.wheat_seeds ?? 0) < 2) return plan('wheat_seeds', 2, world);
+      // With a farm, seeds come from the harvest (tend.mjs keeps two back for this): they are
+      // not gone looking for. That search, 32 blocks of grass at a time, is what took the
+      // player 290 blocks south on game day 66 and into the lake it drowned in on day 69.
+      if ((have.wheat_seeds ?? 0) < 2) return memory.farmField ? null : plan('wheat_seeds', 2, world);
       return open({ skill: 'breed', args: { animal: 'chicken', food: 'wheat_seeds' }, why: 'two chickens in sight and seeds in the pack', timeout: 90 });
     }],
     ['food', food],

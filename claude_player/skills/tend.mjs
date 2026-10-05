@@ -98,6 +98,9 @@ export default async function tend({ bot, api, memory }, { seconds = 200 } = {})
           if ((name(up(cell)) ?? 'air') !== 'air') continue;
           const seed = (seedName && api.find(new RegExp(`^${seedName}$`))) || api.find(SEED);
           if (!seed) continue;
+          // Two seeds stay in the pack when bare earth is sown: they are what breeds chickens,
+          // and with none the brain used to go looking for grass.
+          if (!seedName && seed.name === 'wheat_seeds' && (api.carried().wheat_seeds ?? 0) <= 2) continue;
           await bot.equip(seed, 'hand');
           await api.within(bot.placeBlock(bot.blockAt(at(cell)), new Vec3(0, 1, 0)), 4000, 'sowing').catch(() => {});
           await api.sleep(200);
