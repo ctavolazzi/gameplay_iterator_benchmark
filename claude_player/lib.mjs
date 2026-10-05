@@ -133,6 +133,18 @@ export function make(bot, signal, memory = {}) {
   // Turn 7: four of twelve deaths were drowning. A path through water now costs six times a path round it.
   if (movements) movements.liquidCost = 6;
   if (movements) movements.exclusionAreasBreak = memory.base ? [(block) => (inBase(block.position) ? 1000 : 0)] : [];
+  // Nor does a path dig or put a block down in a field the player has built (memory.farmField,
+  // set by skills/work.mjs). On 2026-10-04 the way into the fenced farm, and out of it, was a
+  // block of earth set down by the fence and a hop over on to the tilled ground. The field is
+  // entered by its gate (skills/build_farm.mjs through()); the pathfinder's own gate opening
+  // (canOpenDoors) is left off, because it ends the process.
+  const field = memory.farmField;
+  const inField = (at) => !!field && !!at && at.x >= field.x - 1 && at.x <= field.x + 21 && at.z >= field.z - 1 && at.z <= field.z + 11
+    && at.y >= field.level - 2 && at.y <= field.level + 5;
+  if (movements && field) {
+    movements.exclusionAreasBreak = [...movements.exclusionAreasBreak, (block) => (inField(block.position) ? 1000 : 0)];
+    movements.exclusionAreasPlace = [(block) => (inField(block.position) ? 1000 : 0)];
+  }
   function inBase(at) {
     const base = memory.base;
     if (!base || !at) return false;
@@ -988,10 +1000,14 @@ export function make(bot, signal, memory = {}) {
     const feet = bot.entity.position.floored();
     const foes = Object.values(bot.entities).filter(isHostile).map((e) => e.position);
     const keepClear = others();
+    // Not in or beside anything built. On 2026-10-04 the shelter was dug twice in the farm the
+    // player was building, 3 blocks down through the path between the plots.
+    const built = bot.findBlocks({ matching: (b) => /^(farmland|wheat|carrots|potatoes|beetroots|.*_fence|.*_fence_gate|.*_planks|.*_bed|chest|.*_door|ladder)$/.test(b.name), maxDistance: 18, count: 120 });
     let best = null;
     for (let dx = -8; dx <= 8; dx++) for (let dz = -8; dz <= 8; dz++) for (let dy = -12; dy <= 2; dy++) {
       const at = feet.offset(dx, dy, dz);
       if (solid(at) || solid(at.offset(0, 1, 0))) continue;
+      if (built.some((b) => Math.abs(b.x - at.x) <= 4 && Math.abs(b.z - at.z) <= 4 && Math.abs(b.y - at.y) <= 6)) continue;
       // Turn 3: it dug in on a river bed and lost 13.5 health drowning. Nowhere wet.
       if ([[0, 0], ...SIDES].some(([wx, wz]) => [0, 1, 2].some((up) => /water|lava/.test(nameAt(at.offset(wx, up, wz)) ?? '')))) continue;
       if (![1, 2, 3].every((down) => GROUND.test(nameAt(at.offset(0, -down, 0)) ?? ''))) continue;

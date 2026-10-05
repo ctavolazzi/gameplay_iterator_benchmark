@@ -216,6 +216,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     if (!at || Math.hypot(here.x - at.x, here.y - at.y, here.z - at.z) > 8) memory.spawnBed = false;
   }
   const bedTime = time >= 12541 && time < 23300;
+  // A chest that would take no more is left alone for half an hour. On 2026-10-04, with 26
+  // diamonds and a full chest, the player walked to the chest, failed to put them in, climbed
+  // out for its next goal, and walked back, round and round (learn() notes the full chest).
+  const chestFull = now - (memory.chestFull ?? 0) < 1800000;
   // The people in the game: every player that is not this one and not a program's.
   const people = Object.keys(bot.players ?? {}).filter((name) => name !== bot.username && !/codex|bot$/i.test(name));
 
@@ -298,7 +302,9 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       if (bot.inventory.emptySlotCount() > 1) return null;
       const b = memory.base;
       const atChest = memory.baseHas?.chest && b && Math.abs(here.x - b.x) <= 3 && Math.abs(here.z - b.z) <= 3 && Math.abs(here.y - b.y) <= 2;
-      return atChest ? null : open({ skill: 'drop_junk', args: {}, why: 'the pack is full', timeout: 30 });
+      // With work open on the land the earth and the wood are wanted: make_room keeps them.
+      const working = (memory.works ?? []).some((w) => !w.done);
+      return atChest ? null : open({ skill: working ? 'make_room' : 'drop_junk', args: {}, why: 'the pack is full', timeout: 30 });
     }],
     // Junk taken out of the chest leaves the base with the player and is thrown away outside.
     ['junk out', () => {
@@ -369,12 +375,22 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const shut = api.solid(new api.Vec3(b.x + 2, b.y, b.z)) || api.solid(new api.Vec3(b.x + 2, b.y + 1, b.z));
       return inside && shut ? open({ skill: 'leave_base', args: {}, why: 'the doorway was closed for the night', timeout: 60 }) : null;
     }],
+    // Work a person asked for on the land (a farm, ground levelled, trees felled: land.mjs
+    // reads the request, skills/work.mjs does one piece of it and looks at the world again).
+    // By day, and not begun so late that dusk finds the player out in the field: on 2026-10-04
+    // the night reflex dug its shelter in the middle of the farm it was building.
+    ['works', () => {
+      const job = (memory.works ?? []).find((w) => !w.done);
+      if (!job || world.night || time > 11200) return null;
+      return open({ skill: 'work', args: { id: job.id }, why: `${job.kind}, asked for by ${job.by}`, timeout: Math.max(60, Math.min(600, Math.round((12300 - time) / 20))) })
+        ?? { stuck: `the ${job.kind} ${job.by} asked for keeps failing` };
+    }],
     // A chest in the base, and what is not needed on a trip put into it whenever the player is
     // in the room: every death under ground so far took everything it had made.
     ['stash', () => {
       const chest = memory.baseHas?.chest;
       const b = memory.base;
-      if (!chest || !b) return null;
+      if (!chest || !b || chestFull) return null;
       const inside = Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2;
       // What counts as a spare is lib.mjs's to say, so that this goal and the skill agree: they
       // did not, and the goal asked ten times for a stash that had nothing it would put in.
@@ -385,7 +401,7 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['bank', () => {
       const chest = memory.baseHas?.chest;
       const b = memory.base;
-      if (!chest || !b || (have.diamond ?? 0) < 16 || world.night) return null;
+      if (!chest || !b || (have.diamond ?? 0) < 16 || world.night || chestFull) return null;
       if (Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2) return null;
       const why = `${have.diamond} diamonds to the chest`;
       if (b.y - here.y > 16) return open({ skill: 'surface', args: {}, why, timeout: 600 });
@@ -562,6 +578,7 @@ export async function learn({ row, memory, fresh }) {
     if (!row.ok && !interrupted) memory.heading = DIRECTIONS[(DIRECTIONS.indexOf(direction) + 1) % 4];
   }
   if (row.skill === 'recover') delete memory.lastDeath;
+  if (row.skill === 'stash' && !row.ok && /destination full/.test(row.note ?? '')) memory.chestFull = Date.now();
   if (row.skill === 'come') delete memory.order;
   // A follow that ended for any reason but a reflex (a fight, a creeper) is over: the time was
   // up, the person went out of sight, or someone said stop.

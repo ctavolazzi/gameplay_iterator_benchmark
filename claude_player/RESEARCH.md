@@ -174,6 +174,81 @@ disk free. So the eyes here are written from nothing in the player's own process
 (`sight.mjs`): no download, any game version, and a picture in about a second. README.md,
 "The eyes", says how it was checked.
 
+## Code to run the body with (searched on the evening of 2026-10-04)
+
+CT: "please carefully search the internet for ideas on code you could use to help run your
+avatar". The sections above are about the shape of the loop. This one is about code: what
+other mineflayer players do in the places where this one failed while building its first
+farm. What was read is in the sources; what a search summary said and the source did not
+show is left out.
+
+**Taken, and in the player now**
+
+- **Through a gate on foot, and shut it behind.** Mindcraft's `useDoor` walks to the door,
+  opens it with `activateBlock`, holds forward for 600 ms, and activates it again. The farm's
+  `through()` in `skills/build_farm.mjs` does the same for its gate. The pathfinder's own
+  switch for this (`canOpenDoors`) is not used: see the trap below.
+- **Count the materials before starting.** FelsenBerry's builder plans a bill of materials
+  first and its skills refuse to start without their kit. The farm's fence ran out two thirds
+  of the way round with the nearest table on the far side of it. Now every fence and the gate
+  are made first, at a bench set down outside the gateway.
+- **No towers and no digging into the site while building.** FelsenBerry runs the pathfinder
+  with `allow1by1towers: false` and an `exclusionAreasBreak` guard over the build. `flatten.mjs`
+  does both, and `lib.mjs make()` now gives a built field `exclusionAreasBreak` and
+  `exclusionAreasPlace`, so a path never digs there or sets a block down there.
+- **What is built is guarded where the digging happens.** FelsenBerry's `digguard` reads a list
+  of protected places. Here nothing is listed: `land.mjs trees()` and `flatten.mjs guarded()`
+  work it out from the world (a tree with planks or a ladder on it is holding something up).
+- **An error inside a library does not end the player.** `player.mjs` journals it, stops what
+  is running, and plays on; more than 5 in a minute ends the process as before.
+
+**Worth taking next, in the order they look worth it**
+
+1. **A walk that tries without digging or placing first.** Mindcraft's `goToGoal` asks for a
+   path with harmless movements and only then with ones that break and place. Most of this
+   player's litter (earth steps, holes on the way out of its base) comes from the second kind
+   being the only kind. `api.walk()` is the one place to change.
+2. **Tending the farm.** mineflayer's own `examples/farmer.js` is the whole loop: wheat with
+   `metadata === 7` is ripe and is dug; farmland with air over it is sown with
+   `placeBlock(farmland, up)`. Baritone's `#farm` adds bone meal and a range from a start
+   point. This is the `tend` skill the farm needs once something grows in it.
+3. **Ask for a path before setting off.** The pathfinder has `getPathTo(movements, goal,
+   timeout)`, which answers "is there a way" without moving, and its `path_update` event says
+   `noPath` or `timeout`. A step that fails after a 25 s walk could fail in a moment instead.
+4. **Being stuck, counted.** FelsenBerry counts the pathfinder's `path_reset` events with the
+   reason `stuck` over 15 s, and digs out a block of leaf litter its player wedges on. This
+   player's only measure is "nothing journalled for 7 minutes".
+5. **Dropped things are fetched without digging.** Mindcraft's `pickupNearbyItems` sets
+   `canDig = false` for the walk to each one and stops when the nearest has not changed.
+6. **Standing where a block can be placed.** The pathfinder has `GoalPlaceBlock(pos, world,
+   { range, faces })` and `GoalCompositeAny([...])`. The fence was placed from a cell worked
+   out by hand; the goal does that, and "any of these places to stand" is one goal.
+7. **A build from a drawing.** `prismarine-schematic` reads a `.schem` file and FelsenBerry's
+   `buildSchematic` places it bottom up, with a second pass for what could not go in the first
+   time. This is the way to the bigger base that was asked for at 06:17.
+8. **Scores where the order of goals is a matter of degree.** Game AI writing agrees on a
+   tree for structure (this player's list of goals is one) and scores for trade-offs. Whether
+   to work the land or go home at dusk is now a clock time in `brain.mjs`; it could be the
+   distance home against the light left.
+
+**Not taken**
+
+- **The plugins** (`mineflayer-collectblock`, `-pvp`, `-auto-eat`, `-armor-manager`, `-tool`).
+  npm shows them last published between one and four years ago, and this world is 26.1. What
+  each does the player already does in `lib.mjs` and `reflexes.mjs`, written against the
+  deaths it had. They are code to read, not to depend on.
+- **Baritone itself.** It is a mod for the game's own client, in Java. Its ideas carry over
+  (a cost for placing a block, so a path does not spend them freely); its code does not.
+
+**A trap found on the way: `canOpenDoors`**
+
+The pathfinder's readme lists `canOpenDoors` as "Enable feature to open Fence Gates", off by
+default, and its source says beside it "Causes issues". It does. In
+`node_modules/mineflayer-pathfinder/index.js`, after the gate is opened the next thing to
+place is taken off an empty list, and the tick after that reads `placingBlock.y` of nothing.
+The error is thrown from a timer, outside any skill, and at 20:03 on 2026-10-04 it ended the
+player's process 20 s after the option was first switched on. Leave it off.
+
 ## Sources
 
 - [Voyager: An Open-Ended Embodied Agent with Large Language Models](https://arxiv.org/abs/2305.16291v2) (and [the project page](https://voyager.minedojo.org/))
@@ -187,3 +262,11 @@ disk free. So the eyes here are written from nothing in the player's own process
 - [Human-in-the-Loop Patterns: Approval, Input, and Escalation Workflows](https://understandingdata.com/posts/human-in-the-loop-patterns/)
 - [launchd.plist(5)](https://leancrew.com/all-this/man/man5/launchd.plist.html) and [Restarting macOS apps automatically on crash](https://notes.alinpanaitiu.com/Restarting-macOS-apps-automatically-on-crash)
 - [prismarine-viewer](https://github.com/PrismarineJS/prismarine-viewer)
+- [Mindcraft's skill library, `src/agent/library/skills.js`](https://github.com/mindcraft-bots/mindcraft/blob/main/src/agent/library/skills.js) (read in full: `useDoor`, `goToGoal`, `pickupNearbyItems`, `placeBlock`, `tillAndSow`, `digDown`)
+- [FelsenBerry: a sparse-LLM brain over a deterministic body](https://github.com/felsenuboot/FelsenBerry) (the readme: guards, builder, kit, stuck counting)
+- [mineflayer-pathfinder's readme](https://github.com/PrismarineJS/mineflayer-pathfinder) (every `Movements` option, goal and event), and its source in `node_modules` for `canOpenDoors`
+- [mineflayer's `examples/farmer.js`](https://github.com/PrismarineJS/mineflayer/blob/master/examples/farmer.js)
+- [Voyager's control primitives](https://github.com/MineDojo/Voyager/tree/main/voyager/control_primitives) (the list of files only)
+- [Baritone's usage and features](https://git.psf.lt/0xf8/baritone/src/commit/008422680dfd03b220cbb44f87f548f3549a3631/FEATURES.md) (a mirror; `#farm`, the cost of placing a block)
+- [mineflayer plugins on npm](https://www.npmjs.com/search?q=keywords:mineflayer-plugin) and [mineflayer's own list](https://prismarinejs.github.io/mineflayer/) (how long since each was published)
+- [Minecraft farmland: water, design and survival](https://www.exitlag.com/blog/minecraft-farmland/) (the 9 by 9 plot round one water block; fence and light) and [farm ideas](https://blog.curseforge.com/what-to-build-in-minecraft-ideas/)

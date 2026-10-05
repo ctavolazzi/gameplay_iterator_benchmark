@@ -39,6 +39,8 @@ changes that code. Built 2026-10-03 and 04. Player name in the game: `Claude`.
 | Where it stands in the game's advancements | `node claude_player/curriculum.mjs` |
 | See what it sees | `node claude_player/player.mjs look` (as it stands), `look north`, `look around`, `look fogsift`, `look furnace`, `look -352 59 459`; add `--open` to show the picture. It prints where the PNG is and what is in it in words. Then read the PNG. |
 | The score against Codex's player | `node claude_player/score.mjs`, counted from the server's log. `node claude_player/player.mjs score '{"say":true}'` says it in the game. |
+| Give it a job of work on the land | `node claude_player/player.mjs job '{"say":"build a farm and cut down the trees round it"}'` reads the words as chat would. Or by kind: `job '{"kind":"farm"}'`, `'{"kind":"clear","standAt":66,"radius":12,"near":{"x":-334,"z":470}}'`, `'{"kind":"trees","radius":26}'`. `works` lists them; `job '{"drop":"<id>"}'` takes one off. In the game: "make a farm here", "flatten this hill to y 66", "chop down those trees". The brain works at the first open job by day. |
+| See what a flattening would dig, and dig nothing | `node claude_player/player.mjs run flatten '{"x1":-355,"z1":475,"x2":-341,"z2":489,"level":65,"dry":true}'` |
 | Be woken when something happens | `node claude_player/watch_events.mjs 3300 420` as a background task: it ends on a death, an advancement, a person speaking, an error, or 7 minutes of nothing |
 
 Do not start it as a background task of a chat session: a session's background task is
@@ -62,14 +64,20 @@ stopped after 2 hours, and that is how it was stopped in the middle of a good ru
 | `score.mjs`, `challenge.json` | The challenge with Codex's player, and its score counted from the server's log. |
 | `report.mjs`, `asks.json` | The report the session reads at the start of each turn (what needs deciding first), and what has been asked for with whether each is done. |
 | `RESEARCH.md` | What others have built along these lines, with sources, and what this player takes from each. |
+| `land.mjs` | Working the land, with no game connection: `asksFor()` reads a loose request for the jobs in it (a farm, ground levelled, trees felled), `chooseSite()` puts a field on surveyed ground where it costs least, `trees()` gathers logs into trees and says which are hanging in the air and which hold a build up. |
+| `skills/work.mjs` | One piece of a job from `memory.works`. It looks at the world again every time and does the first thing missing: survey and choose, make room in the pack, `flatten`, `fill_land`, `build_farm`, `fell_trees`, sow. |
+| `skills/build_farm.mjs` | The farm: two 9 by 9 plots, each round one block of water, a path with three torches, a fence, a gate, a bench outside it. `farmPlan()` is the plan; the skill does what the world lacks and reads the world back. In and out by the gate, on foot. |
+| `skills/flatten.mjs`, `fill_land.mjs`, `fell_trees.mjs`, `survey_land.mjs`, `make_room.mjs` | Dig everything above a level, fill up to it, fell whole trees and take down what was built to climb them, read the lie of the land, and clear the pack while keeping earth and wood. None digs what is made or what holds something made up. |
 | `skills/*.mjs` | One small file per thing the player can be asked to do. |
 | `pure.mjs` | Small functions with no game connection. |
-| `../tests/claude_*.test.mjs` | 61 tests: the planner played from empty hands to an iron pickaxe; the reflex rules held against the situations that killed the player; the room's way out; what was really said in chat read for what it asked; the score; the eyes on a made-up world; the report and the watcher; the kit from the chest; staying in bed; the curriculum on a small tree and on the game's own list. |
+| `../tests/claude_land.test.mjs` | What CT really typed read for its jobs, and talk that is not a request; a field sited on a made-up plain, off its chest and its pond; trees standing, hanging and holding a platform; the farm's plan (every tilled block wet, the gate on the ring). |
+| `../tests/claude_*.test.mjs` | 73 tests in all: the planner played from empty hands to an iron pickaxe; the reflex rules held against the situations that killed the player; the room's way out; what was really said in chat read for what it asked; the score; the eyes on a made-up world; the report and the watcher; the kit from the chest; staying in bed; the curriculum on a small tree and on the game's own list. |
 | `journal/` | A copy of the journal, the memory and the advancements as they stood when this was written. The live ones are in `../data/claude_player/`, which is not in git. |
 
 What reloads when its file is saved, with the player still running: `brain.mjs`,
 `planner.mjs`, `reflexes.mjs`, `lib.mjs`, `chat.mjs`, `actions.mjs`, `eyes.mjs`, `sight.mjs`,
-`score.mjs` and everything in `skills/`.
+`score.mjs`, `land.mjs` and everything in `skills/`. (`chat.mjs` takes `asksFor()` from
+`land.mjs` when it loads: after changing that function, save `chat.mjs` too.)
 What needs the player restarted: `player.mjs`, and `pure.mjs` (the others import it once).
 
 ## The eyes
@@ -156,6 +164,24 @@ In his words, with the day. These are standing.
   "What do you guys think about doing some cleanup today?" and "I was thinking we could
   flatten the surrounding area and prepare to get some crops going" (07:38. Not started yet.)
 
+- "please load up the server open it have me join join yourself and play alongside me"
+  (2026-10-04, 19:09, after the Mac was restarted. The one time the server was started from a
+  session, because he asked: `open tools/coop.command`, then `open claude_player/play.command`,
+  then `node tools/watch_client.mjs launch --coop --username fogsift`.)
+- "I want you to get started building a farm for me. search online for minecraft farm ideas,
+  then choose a spot near spawn onto which you will build our farm. flatten the surrounding
+  terrain by dropping everything down to the 66th block level. basically...execute order 66 -
+  except if order 66 was just building a badass farm" (2026-10-04; the farm is built at
+  x -342 to -322, z 460 to 470 and not yet sown. "The 66th block level" is taken as where a
+  player stands, Y 66 on the F3 screen, which is the height of the ground round his treehouse.)
+- "continue farming, and please also eliminate all the surrounding trees entirely if they are
+  slightly off the ground, they should be finished up and the wood harvested" (2026-10-04)
+- "refine the code that runs your avatar to accomodate these findings and plan for them next
+  time, not as hard code, but as responses to things that are more nebulous" (2026-10-04;
+  `land.mjs` and `skills/work.mjs`)
+- "please carefully search the internet for ideas on code you could use to help run your
+  avatar" (2026-10-04; RESEARCH.md, "Code to run the body with")
+
 And from the repository's own rules: no paid API calls in the loop; no em dashes or en
 dashes; commit and push each finished piece, only your own paths; the world on port 25566
 is CT's and is never started, stopped or restarted from here.
@@ -190,6 +216,18 @@ is CT's and is never started, stopped or restarted from here.
   `player.mjs status` returns (health, doing, thought, lastSkill, deaths). Keep those fields.
 - **`bot.wake()` is broken for this game version.** The library sends a number where 26.1
   wants the name `stop_sleeping`. `lib.mjs getUp()` sends the name.
+- **`canOpenDoors` ends the process.** The pathfinder's option for opening fence gates throws
+  from its own tick after the gate is opened (RESEARCH.md has the lines). It ended the player
+  at 20:03:35 on 2026-10-04. `player.mjs` now catches such an error and plays on, but leave the
+  option off: `skills/build_farm.mjs through()` walks a gate by hand.
+- **A fenced field is a pen.** Twice the fence closed with the player inside, and the way out
+  was a block of earth and a hop on to the tilled ground. The farm is entered by its gate,
+  and a path may not dig or place inside `memory.farmField` (`lib.mjs make()`).
+- **With the brain off, nothing takes the player home at dusk.** The night reflex then digs in
+  where it stands. It dug in the farm twice while the session was driving. It now keeps off
+  anything built, and jobs go through the brain (`player.mjs job`), which is home by dusk.
+- **A full pack loses what is made next**, quietly: "crafted torch but carry no more of it".
+  `make_room` keeps earth, wood and saplings; `drop_junk` throws them out with the rest.
 - **The world's spawn point is in a treetop**, and a bed only holds the spawn point if it has
   been slept in since it was last put down.
 

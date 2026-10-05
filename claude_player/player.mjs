@@ -107,6 +107,23 @@ async function serve(gamePort, startAuto) {
     if (`${kind}:${message}` !== lastProblem) event(kind, { message });
     lastProblem = `${kind}:${message}`;
   };
+  // An error thrown out of a timer inside a library ended the process, and the player with
+  // it, at 20:03 on 2026-10-04: the pathfinder's tick read a value it had just emptied, after
+  // opening a fence gate. Such an error is journalled, what is running is stopped, and play
+  // goes on. More than 5 in a minute is not a slip, and the process ends as it did before.
+  const crashes = [];
+  for (const kind of ['uncaughtException', 'unhandledRejection']) {
+    process.on(kind, (error) => {
+      const now = Date.now();
+      crashes.push(now);
+      while (crashes.length && now - crashes[0] > 60000) crashes.shift();
+      console.error(error);
+      try { problem('brain_error', `${kind} caught (${crashes.length} in the last minute): ${String(error?.stack ?? error).slice(0, 240)}`); } catch { /* the journal is not there */ }
+      try { bot?.pathfinder?.setGoal(null); } catch { /* no pathfinder yet */ }
+      try { stopAll(`an error inside a library: ${String(error?.message ?? error).slice(0, 80)}`); } catch { /* nothing running */ }
+      if (crashes.length > 5) setTimeout(() => process.exit(3), 200);
+    });
+  }
 
   function connect() {
     const started = Date.now();
