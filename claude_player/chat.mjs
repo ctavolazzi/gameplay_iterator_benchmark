@@ -41,6 +41,9 @@ export function reads(message) {
   const short = text.trim().split(/\s+/).length <= 5;
   if (/\b(rise and shine|wake up|wakey|get up|good morning)\b/.test(text)) return 'morning';
   if (sleepAsked(text)) return 'bed';
+  // fogsift, lying in his bed at 21:13 on 2026-10-04: "How far are you from bed?" The answer
+  // he got was where the bed is and what the player was doing, and not how far.
+  if (/\bhow (far|close|near|long)\b.*\b(bed|sleep|home|base)\b/.test(text)) return 'bedtrip';
   // Work on the land, before the notes: "the trees should be finished up and the wood
   // harvested" has a "should" in it and is a job, not a tip. asksFor() leaves the tips alone.
   if (asksFor(message).length) return 'works';
@@ -161,6 +164,19 @@ export async function heard({ bot, memory, username, message, status, event, say
     // Every player has to be in a bed for the night to pass (the world's rule since 06:40 on
     // 2026-10-04), so when someone asks, this player goes: it may be the one holding the night up.
     answer = toBed({ bot, memory, who: username, stop });
+  } else if (asked === 'bedtrip') {
+    // How far the bed is, in blocks and in seconds, and whether the night is long enough.
+    const bedAt = memory.places?.bed;
+    const hour = bot.time?.timeOfDay ?? 0;
+    if (bot.isSleeping) answer = 'I am in my bed.';
+    else if (!bedAt) answer = 'I have no bed just now.';
+    else {
+      const trip = bedTrip(bot.entity.position, bedAt, hour);
+      const flat = Math.round(Math.hypot(bot.entity.position.x - bedAt.x, bot.entity.position.z - bedAt.z));
+      const night = hour >= 12541 && hour < 23460;
+      answer = `${flat} blocks from my bed${trip.up > 3 ? ` and ${trip.up} under it` : ''}: about ${trip.need} s away.`
+        + (night ? ` The night has ${trip.left} s left${trip.need > trip.left ? ', so I will not be in it before morning' : ''}.` : '');
+    }
   } else if (asked === 'note') {
     appendFileSync(NOTES, `${JSON.stringify({ at: new Date().toISOString(), username, message, where: status.where, doing: status.doing?.skill ?? null })}\n`);
     event('player_note', { username, message });

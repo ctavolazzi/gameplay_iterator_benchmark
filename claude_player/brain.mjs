@@ -182,6 +182,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     const chicks = !earned.includes('The Parrots and the Bats') && (have.wheat_seeds ?? 0) >= 2;
     const animal = ANIMALS.find((name) => world.creatures.includes(name) && !(chicks && name === 'chicken'));
     if (animal && hasTool(have, 'wooden_sword')) return open({ skill: 'hunt', args: { animal }, why: `food: ${foodCarried} carried`, timeout: 60 });
+    // None in sight, and nearly out: to where the atlas last saw some, if that is near enough
+    // to be back by dusk. (It used to wait for an animal to walk past.)
+    const seen = foodCarried < 3 && time < 8000 && hasTool(have, 'wooden_sword') ? world.knows(ANIMALS.filter((name) => !(chicks && name === 'chicken'))) : null;
+    if (seen && seen.far <= 110) return open({ skill: 'goto', args: { x: seen.x, z: seen.z, range: 8 }, why: `food: ${foodCarried} carried, and ${seen.name} was seen ${seen.far} blocks off`, timeout: 240 });
     return null;
   }
 
@@ -392,6 +396,15 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const shut = api.solid(new api.Vec3(b.x + 2, b.y, b.z)) || api.solid(new api.Vec3(b.x + 2, b.y + 1, b.z));
       return inside && shut ? open({ skill: 'leave_base', args: {}, why: 'the doorway was closed for the night', timeout: 60 }) : null;
     }],
+    // The farm is worked (CT, 2026-10-04: "work the farm so you will have food"): looked over
+    // every five minutes by day for what is ripe, cut, sown again, and the wheat baked.
+    ['the farm', () => {
+      const field = memory.farmField;
+      if (!field || world.night || time > 11000 || now - (field.tendedAt ?? 0) < 300000) return null;
+      if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      if (Math.hypot(here.x - field.x - 10, here.z - field.z - 5) > 120) return null;
+      return open({ skill: 'tend', args: {}, why: 'the farm is looked over for what is ripe', timeout: 240 });
+    }],
     // What is gathered is kept. Once there is a storehouse (memory.store, from skills/build.mjs),
     // a pack that is nearly full is emptied into it by day: on 2026-10-04 the pack was full from
     // morning to night, the one chest in the base too, and stone, saplings and seeds' worth of
@@ -417,9 +430,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const job = jobs.find((w) => !world.blocked(stepFor(w))) ?? jobs[0];
       if (!job || world.night || time > 11200) return null;
       // Felling is paid for in falls: the first morning of it took the player from 20 health to
-      // 14 with one piece of chicken left. Hurt or nearly out of food, the work waits and the
-      // goals below it (food) have their turn.
-      if (bot.health < 12 || foodCarried < 2) return null;
+      // 14. Hurt, the work waits. (It also waited when fewer than 2 pieces of food were carried,
+      // and on the morning of game day 66 that was every job stopped by one apple: with no
+      // animal in sight there was nothing the food goal could do. Food is the farm's to give.)
+      if (bot.health < 12) return null;
       return open({ skill: 'work', args: { id: job.id }, why: `${job.kind}, asked for by ${job.by}`, timeout: Math.max(60, Math.min(600, Math.round((12300 - time) / 20))) })
         ?? { stuck: `the ${job.kind} ${job.by} asked for keeps failing` };
     }],

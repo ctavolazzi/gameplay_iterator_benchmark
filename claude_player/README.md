@@ -40,6 +40,8 @@ changes that code. Built 2026-10-03 and 04. Player name in the game: `Claude`.
 | See what it sees | `node claude_player/player.mjs look` (as it stands), `look north`, `look around`, `look fogsift`, `look furnace`, `look -352 59 459`; add `--open` to show the picture. It prints where the PNG is and what is in it in words. Then read the PNG. |
 | The score against Codex's player | `node claude_player/score.mjs`, counted from the server's log. `node claude_player/player.mjs score '{"say":true}'` says it in the game. |
 | Give it a job of work on the land | `node claude_player/player.mjs job '{"say":"build a farm and cut down the trees round it"}'` reads the words as chat would. Or by kind: `job '{"kind":"farm"}'`, `'{"kind":"clear","standAt":66,"radius":12,"near":{"x":-334,"z":470}}'`, `'{"kind":"trees","radius":26}'`. `works` lists them; `job '{"drop":"<id>"}'` takes one off. In the game: "make a farm here", "flatten this hill to y 66", "chop down those trees". The brain works at the first open job by day. |
+| Have it build | `node claude_player/player.mjs job '{"kind":"build","what":"storehouse","near":{"x":-332,"z":476}}'`, or in the game "build a storehouse by the farm". It picks the ground, levels it and builds. |
+| See what it knows of the country | `node claude_player/player.mjs atlas` |
 | See what a flattening would dig, and dig nothing | `node claude_player/player.mjs run flatten '{"x1":-355,"z1":475,"x2":-341,"z2":489,"level":65,"dry":true}'` |
 | Be woken when something happens | `node claude_player/watch_events.mjs 3300 420` as a background task: it ends on a death, an advancement, a person speaking, an error, or 7 minutes of nothing |
 
@@ -68,6 +70,10 @@ stopped after 2 hours, and that is how it was stopped in the middle of a good ru
 | `skills/work.mjs` | One piece of a job from `memory.works`. It looks at the world again every time and does the first thing missing: survey and choose, make room in the pack, `flatten`, `fill_land`, `build_farm`, `fell_trees`, sow. |
 | `skills/build_farm.mjs` | The farm: two 9 by 9 plots, each round one block of water, a path with three torches, a fence, a gate, a bench outside it. `farmPlan()` is the plan; the skill does what the world lacks and reads the world back. In and out by the gate, on foot. |
 | `skills/flatten.mjs`, `fill_land.mjs`, `fell_trees.mjs`, `survey_land.mjs`, `make_room.mjs` | Dig everything above a level, fill up to it, fell whole trees and take down what was built to climb them, read the lie of the land, and clear the pack while keeping earth and wood. None digs what is made or what holds something made up. |
+| `atlas.mjs` | Where things were seen: ores, wood by kind, sand, clay, crops, creatures, one place per 16 blocks, in `memory.atlas`. The brain looks every 15 s (`lib.mjs prospect()`), forgets a place when it stands by it and the thing is gone, and the planner asks it before wandering. `node claude_player/player.mjs atlas` lists it. |
+| `plans.mjs` | Plans of things to build, with no game connection: cells, the order they go in, where to stand for each. `planFaults()` finds what is wrong with a plan before a block is placed. `storehouse()` is the first plan. |
+| `skills/build.mjs`, `store.mjs` | Build from a plan (count, make, place stage by stage, read the world back), and put the pack's surplus into the storehouse's chests, in and out by its door. |
+| `skills/tend.mjs` | Work the farm: cut what is ripe, sow again, till what was trodden, bake the wheat into bread. The brain does it every five minutes by day. |
 | `skills/*.mjs` | One small file per thing the player can be asked to do. |
 | `pure.mjs` | Small functions with no game connection. |
 | `../tests/claude_land.test.mjs` | What CT really typed read for its jobs, and talk that is not a request; a field sited on a made-up plain, off its chest and its pond; trees standing, hanging and holding a platform; the farm's plan (every tilled block wet, the gate on the ring). |
@@ -181,6 +187,16 @@ In his words, with the day. These are standing.
   `land.mjs` and `skills/work.mjs`)
 - "please carefully search the internet for ideas on code you could use to help run your
   avatar" (2026-10-04; RESEARCH.md, "Code to run the body with")
+
+- "show me what you're made of - please write better scripts that really do the job of
+  playing the game and reacting to what they observe, collecting resources, and you can help
+  your avatar with building structures and searching out new resources to build with and
+  improve over time" (2026-10-04; `atlas.mjs`, `plans.mjs`, `skills/build.mjs`, `store.mjs`,
+  and `lib.mjs walk()` on foot first)
+- "I also want you to work the farm so you will have food" (2026-10-04; `skills/tend.mjs` and
+  the brain's goal "the farm")
+- In the game, as fogsift: "How far are you from bed?" (21:13 on 2026-10-04, from his bed. The
+  player said where its bed was and not how far. It answers in blocks and seconds now.)
 
 And from the repository's own rules: no paid API calls in the loop; no em dashes or en
 dashes; commit and push each finished piece, only your own paths; the world on port 25566

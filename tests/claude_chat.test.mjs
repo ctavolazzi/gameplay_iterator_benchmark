@@ -17,6 +17,7 @@ test('what was really said in the game is read for what it asked', () => {
     'Claude can you build a bigger base?': 'open',
     'What do you guys think about doing some cleanup today?': 'open',
     'I was thinking we could flatten the surrounding area and prepare to get some crops going': 'works',
+    'How far are you from bed?': 'bedtrip',
     'I want you to get started building a farm for me': 'works',
     'please also eliminate all the surrounding trees entirely if they are slightly off the ground, they should be finished up and the wood harvested': 'works',
     "Hey claude, if there's already a crafting table near you, you can use that one instead": 'note',
