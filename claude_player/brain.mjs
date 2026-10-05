@@ -479,7 +479,11 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['bank', () => {
       const chest = memory.baseHas?.chest;
       const b = memory.base;
-      if (!chest || !b || (have.diamond ?? 0) < 16 || world.night || chestFull) return null;
+      // Only diamonds the chest would take: the ones kept back for making gear are not spare, and
+      // with 26 carried and all 26 kept, every step in the mine was followed by a walk home that
+      // put nothing in (game day 81).
+      const spareDiamonds = Object.fromEntries(api.spares()).diamond ?? 0;
+      if (!chest || !b || spareDiamonds < 16 || world.night || chestFull) return null;
       if (Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2) return null;
       const why = `${have.diamond} diamonds to the chest`;
       if (b.y - here.y > 16) return open({ skill: 'surface', args: {}, why, timeout: 600 });
