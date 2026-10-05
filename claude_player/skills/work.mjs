@@ -46,7 +46,11 @@ export default async function work({ bot, api, memory, skill, note }, { id = nul
   }
   const look = (reach) => survey(bot, api, { xa: near.x - reach, xb: near.x + reach, za: near.z - reach, zb: near.z + reach });
   // The level: the height asked for (where a player stands, so one under it), or the height most of the ground is at.
-  const levelOf = (found) => job.level ?? (Number.isInteger(job.standAt) ? job.standAt - 1 : land.groundLevel(found.columns));
+  // Beside something already built it is that thing's level: the first storehouse was sited two
+  // blocks under the farm next to it, because most of the ground toward the lake is lower.
+  const field = memory.farmField;
+  const beside = field && Math.hypot(field.x + 10 - near.x, field.z + 5 - near.z) < 48 ? field.level : null;
+  const levelOf = (found) => job.level ?? (Number.isInteger(job.standAt) ? job.standAt - 1 : beside ?? land.groundLevel(found.columns));
 
   if (job.kind === 'farm') {
     if (!job.site) {
@@ -97,6 +101,37 @@ export default async function work({ bot, api, memory, skill, note }, { id = nul
     tell(sown.note);
     const crops = sown.now?.crops ?? 0;
     return crops >= 160 ? finish(`${crops} blocks are growing.`) : more(sown.ok, `${crops} of 160 blocks are growing.`);
+  }
+
+  if (job.kind === 'build') {
+    // A building from plans.mjs: the ground chosen as a field's is, levelled, and built on.
+    const { PLANS } = await load('../plans.mjs');
+    const what = PLANS[job.what] ? job.what : 'storehouse';
+    const size = PLANS[what]({ x: 0, y: 0, z: 0 }).size;
+    if (!job.site) {
+      const found = look(30);
+      const level = levelOf(found);
+      const site = land.chooseSite(found, { w: size.w, h: size.d, level, near, reach: 26, margin: 2 });
+      if (!site) return more(false, `no ground for a ${size.w} by ${size.d} ${what} within 26 blocks of ${near.x} ${near.z} that is clear of water and of what is built`);
+      job.site = { x: site.x, z: site.z };
+      job.level = level;
+      const line = `The ${what} goes at x ${site.x} to ${site.x + size.w - 1}, z ${site.z} to ${site.z + size.d - 1}, its door to the south.`;
+      bot.chat(line);
+      tell(line);
+    }
+    const { x, z } = job.site;
+    const level = job.level;
+    const built = await skill('build', { plan: what, x, y: level + 1, z, seconds: left() });
+    if (/the ground is not ready/.test(built.note)) {
+      const cut = await skill('flatten', { x1: x - 2, z1: z - 2, x2: x + size.w + 1, z2: z + size.d + 1, level, seconds: left() });
+      tell(`Levelling: ${cut.note}`);
+      if (cut.left > 0) return more(cut.ok, 'More to dig.');
+      const filled = await skill('fill_land', { x1: x - 1, z1: z - 1, x2: x + size.w, z2: z + size.d, level, seconds: Math.min(left(), 300) });
+      tell(`Filling: ${filled.note}`);
+      return more(filled.ok || cut.ok, 'The ground is made ready; building comes next.');
+    }
+    tell(`Building: ${built.note}`);
+    return built.whole ? finish(`The ${what} is whole.`) : more(built.ok, 'More to build.');
   }
 
   if (job.kind === 'clear') {

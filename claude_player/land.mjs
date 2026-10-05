@@ -10,7 +10,7 @@
 // What a person has made. Never dug, and a tree with any of it on or against it is not cut.
 export const MADE = /^(crafting_table|furnace|chest|barrel|torch|wall_torch|ladder|.*_bed|.*_door|.*_trapdoor|.*_sign|.*_fence|.*_fence_gate|.*_stairs|.*_slab|.*_planks|glass|glass_pane|.*_glass|farmland|wheat|carrots|potatoes|beetroots|composter|.*_banner|lantern|campfire|.*_wall|scaffolding)$/;
 
-// The jobs a message asks for, in the order it asks: [{ kind: 'farm' | 'clear' | 'trees', standAt? }].
+// The jobs a message asks for, in the order it asks: [{ kind: 'farm' | 'build' | 'clear' | 'trees', standAt?, what? }].
 // One message can hold several. What was really said on 2026-10-04 is in tests/claude_land.test.mjs.
 export function asksFor(message) {
   const jobs = [];
@@ -26,7 +26,9 @@ export function asksFor(message) {
     if (/\b(with (a|an|your)|faster|easier|safer|instead|by using|use (a|an|the|your))\b/.test(text)) return;
     const at = (pattern) => { const found = pattern.exec(text); return found ? found.index : -1; };
     const found = {
-      farm: at(/\b(build|building|make|making|start|set up|create|construct|begin|get started|put in|lay out|want|need)\b.{0,60}\b(farm|farmland|crop field|field|garden)\b/),
+      // Not "a storehouse by the farm": the farm has to be the thing made, not where something else goes.
+      farm: at(/\b(build|building|make|making|start|set up|create|construct|begin|get started|put in|lay out|want|need)\b.{0,60}(?<!\b(?:by|near|beside|at|to|round|around|from|in|on|for) (?:the |our |my |a |that |this )?)\b(farm|farmland|crop field|field|garden)\b/),
+      build: at(/\b(build|building|make|making|put up|construct|want|need)\b.{0,40}\b(storehouse|store ?room|storage|shed|barn|warehouse)\b/),
       clear: at(/\b(flatten|level (out|off|the|this|that|everything|it)|even out|smooth out)\b/),
       trees: Math.max(at(/\b(cut|chop|fell|clear|remove|eliminate|get rid of|take down|finish(ed)?( up| off)?|harvest)\b.{0,60}\btrees?\b/),
         at(/\btrees?\b.{0,80}\b(cut|chopped|felled|gone|removed|finished( up| off)?|harvested|eliminated|taken down)\b/)),
@@ -36,7 +38,7 @@ export function asksFor(message) {
       had.add(kind);
       // "down to the 66th block level", "to y 66", "level 66": the height a player stands at.
       const height = kind === 'clear' && /\b(?:to|at|level|height|y)\s*(?:the\s*|=\s*)?(-?\d{1,3})(?:st|nd|rd|th)?\b/.exec(text.slice(index));
-      jobs.push({ kind, order: sentence * 1000 + index, ...(height && { standAt: Number(height[1]) }) });
+      jobs.push({ kind, order: sentence * 1000 + index, ...(height && { standAt: Number(height[1]) }), ...(kind === 'build' && { what: 'storehouse' }) });
     }
   });
   return jobs.sort((a, b) => a.order - b.order).map(({ order, ...job }) => job);

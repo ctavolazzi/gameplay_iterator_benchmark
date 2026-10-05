@@ -49,6 +49,21 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   memory.explored ??= {};
   for (const [sig, b] of Object.entries(memory.blocked)) if (now - b.until > 30 * 60000) delete memory.blocked[sig];
 
+  // The atlas: what is in sight is written down every 15 s, and what is no longer where it was
+  // is taken out, so that the planner can walk to a thing it passed an hour ago (atlas.mjs).
+  let atlas = null;
+  try {
+    atlas = await fresh('atlas.mjs');
+    if (now - (memory.atlasAt ?? 0) > 15000) {
+      memory.atlasAt = now;
+      memory.atlas ??= {};
+      const at = bot.entity.position;
+      const found = api.prospect(atlas.BLOCKS, atlas.CREATURES);
+      atlas.note(memory.atlas, found, now, at, memory.home ?? at);
+      atlas.forget(memory.atlas, found, now, at);
+    }
+  } catch { atlas = null; }
+
   // In a treetop (the world's spawn point is one): down by the trunk before anything else.
   if (/_leaves$/.test(api.nameAt(bot.entity.position.floored().offset(0, -1, 0)) ?? '') && api.heightAboveGround() > 4) {
     const down = { skill: 'down_from_tree', args: {}, why: `${api.heightAboveGround()} blocks up in a tree`, goal: 'down', timeout: 90 };
@@ -136,6 +151,8 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     y: bot.entity.position.y,
     surfaceY: memory.home?.y ?? 64,
     blocked: (step) => (memory.blocked[signature(step)]?.until ?? 0) > now,
+    // Where any of these was last seen ('log' is any wood), for the planner to walk to.
+    knows: (names) => (atlas ? atlas.nearest(memory.atlas, names.flatMap((name) => (name === 'log' ? atlas.BLOCKS.filter((b) => b.endsWith('_log')) : [name])), bot.entity.position, { now }) : null),
   };
   const open = (step) => (world.blocked(step) ? null : step);
   const item = (name, count = 1) => () => ((have[name] ?? 0) >= count ? null : plan(name, count, world));
@@ -374,6 +391,19 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const inside = Math.abs(here.x - 0.5 - b.x) <= 1.6 && Math.abs(here.z - 0.5 - b.z) <= 1.6 && Math.abs(here.y - b.y) <= 1.6;
       const shut = api.solid(new api.Vec3(b.x + 2, b.y, b.z)) || api.solid(new api.Vec3(b.x + 2, b.y + 1, b.z));
       return inside && shut ? open({ skill: 'leave_base', args: {}, why: 'the doorway was closed for the night', timeout: 60 }) : null;
+    }],
+    // What is gathered is kept. Once there is a storehouse (memory.store, from skills/build.mjs),
+    // a pack that is nearly full is emptied into it by day: on 2026-10-04 the pack was full from
+    // morning to night, the one chest in the base too, and stone, saplings and seeds' worth of
+    // room were thrown on the ground. Worth the walk from anywhere near; done in passing when close.
+    ['store', () => {
+      const house = memory.store;
+      if (!house || world.night || time > 11400 || now - (house.fullAt ?? 0) < 1800000) return null;
+      if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      const far = Math.hypot(here.x - house.door.outside.x, here.z - house.door.outside.z);
+      const free = bot.inventory.emptySlotCount();
+      if (far > 120 || !(free <= 4 || (far < 24 && free <= 12))) return null;
+      return open({ skill: 'store', args: {}, why: `${36 - free} of 36 places in the pack are taken`, timeout: 120 });
     }],
     // Work a person asked for on the land (a farm, ground levelled, trees felled: land.mjs
     // reads the request, skills/work.mjs does one piece of it and looks at the world again).

@@ -94,7 +94,13 @@ function need(item, count, w, trail) {
     if (underGround) return open(step('surface', {}, 600)) ?? { stuck: 'cannot get back to the surface' };
     return null;
   };
-  const explore = () => open(step('explore', {}, 90)) ?? { stuck: `nowhere left to look for ${item}` };
+  // Where it was seen before, if the atlas knows (w.knows, from atlas.mjs), and a wander only
+  // when nothing is known or the walk there has just failed.
+  const explore = (names = []) => {
+    const seen = names.length ? w.knows?.(names) : null;
+    const go = seen && open({ ...step('goto', { x: seen.x, z: seen.z, range: 6 }, 300), why: `${why}: ${seen.name} was seen at ${seen.x} ${seen.y} ${seen.z}` });
+    return go || (open(step('explore', {}, 90)) ?? { stuck: `nowhere left to look for ${item}` });
+  };
 
   if (/^[a-z_]+_log$/.test(item) && !item.startsWith('stripped_')) {
     const wait = onTheSurface('wood');
@@ -105,7 +111,7 @@ function need(item, count, w, trail) {
       const take = w.sees(block) && open(step('collect', { block, count: logs }, 60 + 40 * logs));
       if (take) return take;
     }
-    return explore();
+    return explore([item, 'log']);
   }
 
   const source = SOURCES[item] ?? (item.endsWith('_wool') ? { hunt: 'sheep' } : null);
@@ -123,7 +129,7 @@ function need(item, count, w, trail) {
         if (down) return down;
       }
       if (w.night && w.exposed) return { stuck: `${item} waits for morning` };
-      return explore();
+      return explore(source.blocks);
     }
     if (source.fill) {
       if (!((w.have.bucket ?? 0) > 0)) return need('bucket', 1, w, chain) ?? { stuck: 'no bucket' };
@@ -135,12 +141,12 @@ function need(item, count, w, trail) {
         if (down) return down;
       }
       if (source.deeper === undefined) { const up = onTheSurface(item); if (up) return up; }
-      return explore();
+      return explore([source.fill]);
     }
     const wait = onTheSurface(item);
     if (wait) return wait;
-    if (source.hunt) return w.creatures.includes(source.hunt) ? (open(step('hunt', { animal: source.hunt }, 60)) ?? explore()) : explore();
-    if (source.sees && !w.sees(source.sees)) return explore();
+    if (source.hunt) return w.creatures.includes(source.hunt) ? (open(step('hunt', { animal: source.hunt }, 60)) ?? explore()) : explore([source.hunt]);
+    if (source.sees && !w.sees(source.sees)) return explore([source.sees]);
     return open(step(source.skill, { count: missing }, 150)) ?? explore();
   }
 

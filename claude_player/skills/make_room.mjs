@@ -20,6 +20,17 @@ export default async function makeRoom({ bot, api }) {
     dropped[item.name] = (dropped[item.name] ?? 0) + count;
     await api.sleep(150);
   }
+  // Nothing of that kind and still no room (a pack of logs, coal, tools and saplings, the night
+  // of 2026-10-04): saplings beyond 4 of a kind go too. The rest is for the storehouse.
+  if (!Object.keys(dropped).length && bot.inventory.emptySlotCount() <= 1) {
+    for (const item of bot.inventory.items()) {
+      api.check();
+      if (!item.name.endsWith('_sapling') || item.count <= 4) continue;
+      await api.within(bot.toss(item.type, null, item.count - 4), 4000, `dropping ${item.name}`).catch(() => {});
+      dropped[item.name] = (dropped[item.name] ?? 0) + item.count - 4;
+      await api.sleep(150);
+    }
+  }
   api.markJunk();
   const after = bot.inventory.emptySlotCount();
   return { ok: after > before || after > 3, note: `dropped ${Object.entries(dropped).map(([name, n]) => `${n} ${name}`).join(', ') || 'nothing'}; ${after} places free (were ${before})` };

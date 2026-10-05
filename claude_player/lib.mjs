@@ -248,16 +248,100 @@ export function make(bot, signal, memory = {}) {
     await offTheBed();
     const from = bot.entity.position.clone();
     const started = Date.now();
+    // On foot first. The pathfinder digs and builds its way as readily as it walks, and under
+    // the open sky that is how the ground round the base came to be holes, steps of earth and
+    // towers (94 blocks put down in one morning's felling, 2026-10-04). So above ground it is
+    // asked first whether there is a way with nothing dug and nothing placed, for up to a
+    // third of a second, and takes that way if there is one. (Mindcraft's goToGoal does the same.)
+    const moves = bot.pathfinder.movements;
+    const was = { canDig: moves.canDig, towers: moves.allow1by1towers, scaffold: moves.scafoldingBlocks };
+    const harsh = () => { moves.canDig = was.canDig; moves.allow1by1towers = was.towers; moves.scafoldingBlocks = was.scaffold; };
+    let onFoot = false;
+    if (moves.canDig && exposed() && !memory.pass?.brave) {
+      moves.canDig = false;
+      moves.allow1by1towers = false;
+      moves.scafoldingBlocks = [];
+      try {
+        const asked = Date.now();
+        let found = null;
+        for (const step of bot.pathfinder.getPathFromTo(moves, bot.entity.position, goal, { timeout: 350, tickTimeout: 50 })) {
+          found = step.result;
+          if (found.status !== 'partial' || Date.now() - asked > 350) break;
+        }
+        onFoot = found?.status === 'success' && found.path.length <= 220;
+      } catch {
+        onFoot = false;
+      }
+      if (!onFoot) harsh();
+    }
     try {
       await within(bot.pathfinder.goto(goal), ms, what);
     } catch (error) {
       bot.pathfinder.setGoal(null);
-      throw error;
+      // The way on foot was lost on the way (the world changed, or the goal moved): once more,
+      // with digging and building allowed, in what is left of the time.
+      const stopped = signal?.aborted || /took too long|stopped|out of time/.test(error?.message ?? '');
+      const left = ms - (Date.now() - started);
+      if (!onFoot || stopped || left < 3000) { harsh(); throw error; }
+      harsh();
+      onFoot = false;
+      try {
+        await within(bot.pathfinder.goto(goal), left, what);
+      } catch (again) {
+        bot.pathfinder.setGoal(null);
+        throw again;
+      }
+    } finally {
+      if (onFoot) harsh();
     }
     if (strict && Date.now() - started < 1500 && bot.entity.position.distanceTo(from) < 0.5
       && typeof goal.isEnd === 'function' && !goal.isEnd(bot.entity.position.floored())) {
       throw new Error(`No path to the goal! (${what}: the pathfinder gave no way at all)`);
     }
+  }
+
+  // One look for the atlas (atlas.mjs): every block of the named kinds within 40 blocks, and
+  // every creature of the named kinds in sight, as [{ name, x, y, z }]. Looks only.
+  function prospect(blocks, creatures) {
+    const ids = blocks.map((name) => bot.registry.blocksByName[name]?.id).filter((id) => id !== undefined);
+    const out = [];
+    for (const at of bot.findBlocks({ matching: ids, maxDistance: 40, count: 400 })) {
+      const block = bot.blockAt(at);
+      if (block) out.push({ name: block.name, x: at.x, y: at.y, z: at.z });
+    }
+    const wanted = new Set(creatures);
+    for (const e of Object.values(bot.entities)) {
+      if (e === bot.entity || !wanted.has(e.name) || !e.position) continue;
+      out.push({ name: e.name, x: Math.round(e.position.x), y: Math.round(e.position.y), z: Math.round(e.position.z) });
+    }
+    return out;
+  }
+
+  // Through a door or a gate on foot: walk to `from`, open it, go straight to `to` on the other
+  // side, and shut it behind. All three are places to stand (Vec3 of the feet). The pathfinder
+  // is not asked to open anything: its own way of doing it ends the process (RESEARCH.md).
+  // True when the player ends up standing at `to`.
+  async function through(barrier, from, to) {
+    const openable = () => /_door$|_fence_gate$/.test(nameAt(barrier) ?? '');
+    const isOpen = () => String(bot.blockAt(barrier)?.getProperties?.().open) === 'true';
+    const set = async (open) => {
+      if (!openable() || isOpen() === open) return;
+      await bot.lookAt(barrier.offset(0.5, 0.5, 0.5), true);
+      await within(bot.activateBlock(bot.blockAt(barrier)), 4000, open ? 'opening it' : 'shutting it').catch(() => {});
+      await sleep(300);
+    };
+    const there = (at, slack) => Math.abs(bot.entity.position.x - at.x - 0.5) < slack && Math.abs(bot.entity.position.z - at.z - 0.5) < slack;
+    if (!there(from, 0.45)) await walk(new goals.GoalBlock(from.x, from.y, from.z), 40000, 'walking to the door');
+    await settle();
+    await set(true);
+    await bot.lookAt(to.offset(0.5, 1.2, 0.5), true);
+    bot.setControlState('forward', true);
+    for (let i = 0; i < 30 && !there(to, 0.35); i++) await sleep(100);
+    bot.clearControlStates();
+    await sleep(150);
+    const feet = bot.entity.position.floored();
+    if (!(feet.x === barrier.x && feet.z === barrier.z)) await set(false);
+    return there(to, 0.6);
   }
 
   // How many logs lie between this log and the ground under its trunk. null for a branch,
@@ -1238,5 +1322,5 @@ export function make(bot, signal, memory = {}) {
 
   return { liquidNear, fillBucket, kit, kitWants: () => kitFrom(have(), memory.chest ?? {}), markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
-    unworn, wear, hunt, gatherSeeds, plantSeed, farm, goals, Vec3, round, isHostile };
+    unworn, wear, hunt, gatherSeeds, plantSeed, farm, goals, Vec3, round, isHostile, through, prospect };
 }

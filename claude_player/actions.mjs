@@ -91,6 +91,13 @@ export async function survey(ctx, args = {}) {
     players: Object.values(ctx.bot.players).filter((p) => p.entity && p.username !== ctx.bot.username).map((p) => `${p.username} ${Math.round(p.entity.position.x)} ${Math.round(p.entity.position.y)} ${Math.round(p.entity.position.z)}`) };
 }
 
+// What the player has seen and where (atlas.mjs), nearest first: `node claude_player/player.mjs atlas`.
+export async function atlas(ctx) {
+  const { summary } = await ctx.fresh('atlas.mjs');
+  const at = ctx.bot.entity.position;
+  return { ok: true, from: { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) }, known: summary(ctx.memory.atlas, at) };
+}
+
 // The jobs of work on the land (skills/work.mjs): what is open and what is done.
 export async function works(ctx) {
   return { ok: true, works: ctx.memory.works ?? [], field: ctx.memory.farmField ?? null };
@@ -107,8 +114,8 @@ export async function job(ctx, args = {}) {
     return { ok: true, works: ctx.memory.works };
   }
   const { asksFor } = await ctx.fresh('land.mjs');
-  const asked = args.say ? asksFor(args.say) : [{ kind: args.kind, ...(Number.isInteger(args.standAt) && { standAt: args.standAt }) }];
-  if (!asked.length || asked.some((a) => !['farm', 'clear', 'trees'].includes(a.kind))) throw new Error('say a kind (farm, clear or trees), or the words to read');
+  const asked = args.say ? asksFor(args.say) : [{ kind: args.kind, ...(Number.isInteger(args.standAt) && { standAt: args.standAt }), ...(args.what && { what: String(args.what) }) }];
+  if (!asked.length || asked.some((a) => !['farm', 'build', 'clear', 'trees'].includes(a.kind))) throw new Error('say a kind (farm, build, clear or trees), or the words to read');
   const made = asked.map((a, i) => ({ id: `${Date.now().toString(36)}${i}`, ...a, by: String(args.by ?? 'the session'),
     ...(args.near && { near: { x: Math.round(args.near.x), z: Math.round(args.near.z) } }),
     ...(Number.isInteger(args.radius) && { radius: args.radius }),

@@ -12,6 +12,8 @@ test('a loose request is read for the jobs it asks for', () => {
   assert.deepEqual(asksFor('Claude can you make a farm over here'), [{ kind: 'farm' }]);
   assert.deepEqual(asksFor('how about we level this hill to y 70'), [{ kind: 'clear', standAt: 70 }]);
   assert.deepEqual(asksFor('chop down those trees please'), [{ kind: 'trees' }]);
+  assert.deepEqual(asksFor('can you build a storehouse by the farm'), [{ kind: 'build', what: 'storehouse' }]);
+  assert.deepEqual(asksFor('we need a shed for all this wood'), [{ kind: 'build', what: 'storehouse' }]);
 });
 
 test('talk about a farm, a tree or a level is not a request', () => {
