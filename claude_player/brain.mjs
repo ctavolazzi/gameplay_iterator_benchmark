@@ -49,6 +49,26 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   memory.explored ??= {};
   for (const [sig, b] of Object.entries(memory.blocked)) if (now - b.until > 30 * 60000) delete memory.blocked[sig];
 
+  // The atlas: what is in sight is written down every 15 s, and what is no longer where it was
+  // is taken out, so that the planner can walk to a thing it passed an hour ago (atlas.mjs).
+  let atlas = null;
+  try {
+    atlas = await fresh('atlas.mjs');
+    if (now - (memory.atlasAt ?? 0) > 15000) {
+      memory.atlasAt = now;
+      memory.atlas ??= {};
+      const at = bot.entity.position;
+      const found = api.prospect(atlas.BLOCKS, atlas.CREATURES);
+      atlas.note(memory.atlas, found, now, at, memory.home ?? at);
+      atlas.forget(memory.atlas, found, now, at);
+    }
+  } catch { atlas = null; }
+  let landOf = null;
+  try { landOf = await fresh('land.mjs'); } catch { landOf = null; }
+  // What the storehouse would take of the pack (skills/store.mjs says; the store goal asks).
+  let surplusOf = null;
+  try { surplusOf = (await fresh('skills/store.mjs')).surplusOf; } catch { surplusOf = null; }
+
   // In a treetop (the world's spawn point is one): down by the trunk before anything else.
   if (/_leaves$/.test(api.nameAt(bot.entity.position.floored().offset(0, -1, 0)) ?? '') && api.heightAboveGround() > 4) {
     const down = { skill: 'down_from_tree', args: {}, why: `${api.heightAboveGround()} blocks up in a tree`, goal: 'down', timeout: 90 };
@@ -136,6 +156,8 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     y: bot.entity.position.y,
     surfaceY: memory.home?.y ?? 64,
     blocked: (step) => (memory.blocked[signature(step)]?.until ?? 0) > now,
+    // Where any of these was last seen ('log' is any wood), for the planner to walk to.
+    knows: (names) => (atlas ? atlas.nearest(memory.atlas, names.flatMap((name) => (name === 'log' ? atlas.BLOCKS.filter((b) => b.endsWith('_log')) : [name])), bot.entity.position, { now }) : null),
   };
   const open = (step) => (world.blocked(step) ? null : step);
   const item = (name, count = 1) => () => ((have[name] ?? 0) >= count ? null : plan(name, count, world));
@@ -146,6 +168,12 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   function recover() {
     const death = memory.lastDeath;
     if (!death) return null;
+    // Not with empty hands. It wakes in its bed two steps from the chest, and after death 25
+    // it set off for a lake 130 blocks away with nothing, not even a pickaxe to cut a step
+    // with. What the chest holds is taken first (the goal "kit", below).
+    const room = memory.base;
+    const inRoom = room && Math.abs(bot.entity.position.x - 0.5 - room.x) <= 2.6 && Math.abs(bot.entity.position.z - 0.5 - room.z) <= 2.6 && Math.abs(bot.entity.position.y - room.y) <= 2;
+    if (inRoom && memory.baseHas?.chest && memory.chest && api.kitWants().length) return null;
     const age = now - death.at;
     const worth = Object.keys(death.lost ?? {}).some((name) => WORTH_GOING_BACK_FOR.test(name));
     if (age > 270000 || !worth || api.dangerous(death.where)) { delete memory.lastDeath; return null; }
@@ -165,6 +193,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     const chicks = !earned.includes('The Parrots and the Bats') && (have.wheat_seeds ?? 0) >= 2;
     const animal = ANIMALS.find((name) => world.creatures.includes(name) && !(chicks && name === 'chicken'));
     if (animal && hasTool(have, 'wooden_sword')) return open({ skill: 'hunt', args: { animal }, why: `food: ${foodCarried} carried`, timeout: 60 });
+    // None in sight, and nearly out: to where the atlas last saw some, if that is near enough
+    // to be back by dusk. (It used to wait for an animal to walk past.)
+    const seen = foodCarried < 3 && time < 8000 && hasTool(have, 'wooden_sword') ? world.knows(ANIMALS.filter((name) => !(chicks && name === 'chicken'))) : null;
+    if (seen && seen.far <= 110) return open({ skill: 'goto', args: { x: seen.x, z: seen.z, range: 8 }, why: `food: ${foodCarried} carried, and ${seen.name} was seen ${seen.far} blocks off`, timeout: 240 });
     return null;
   }
 
@@ -216,6 +248,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     if (!at || Math.hypot(here.x - at.x, here.y - at.y, here.z - at.z) > 8) memory.spawnBed = false;
   }
   const bedTime = time >= 12541 && time < 23300;
+  // A chest that would take no more is left alone for half an hour. On 2026-10-04, with 26
+  // diamonds and a full chest, the player walked to the chest, failed to put them in, climbed
+  // out for its next goal, and walked back, round and round (learn() notes the full chest).
+  const chestFull = now - (memory.chestFull ?? 0) < 1800000;
   // The people in the game: every player that is not this one and not a program's.
   const people = Object.keys(bot.players ?? {}).filter((name) => name !== bot.username && !/codex|bot$/i.test(name));
 
@@ -292,13 +328,21 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   // In order of how much each matters. A goal returns null when it is done.
   const goals = [
     ['wear', () => (api.unworn().length ? { skill: 'wear', args: {}, why: 'armour carried and not worn', timeout: 20 } : null)],
+    // Inside the farm's fence or the storehouse with nothing running: out by the gate first.
+    // No path leads out of either (land.mjs insideOf() has why).
+    ['out by the gate', () => {
+      const pen = landOf?.insideOf(memory, bot.entity.position.floored());
+      return pen ? open({ skill: 'leave_field', args: {}, why: `inside the ${pen.kind}, and its ${pen.kind === 'farm' ? 'gate' : 'door'} is the way out`, timeout: 60 }) : null;
+    }],
     // A full pack stops everything that makes or picks up a thing. Away from the base's chest,
     // what is not worth a place is thrown away.
     ['room in the pack', () => {
       if (bot.inventory.emptySlotCount() > 1) return null;
       const b = memory.base;
       const atChest = memory.baseHas?.chest && b && Math.abs(here.x - b.x) <= 3 && Math.abs(here.z - b.z) <= 3 && Math.abs(here.y - b.y) <= 2;
-      return atChest ? null : open({ skill: 'drop_junk', args: {}, why: 'the pack is full', timeout: 30 });
+      // With work open on the land the earth and the wood are wanted: make_room keeps them.
+      const working = (memory.works ?? []).some((w) => !w.done);
+      return atChest ? null : open({ skill: working ? 'make_room' : 'drop_junk', args: {}, why: 'the pack is full', timeout: 30 });
     }],
     // Junk taken out of the chest leaves the base with the player and is thrown away outside.
     ['junk out', () => {
@@ -369,12 +413,71 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const shut = api.solid(new api.Vec3(b.x + 2, b.y, b.z)) || api.solid(new api.Vec3(b.x + 2, b.y + 1, b.z));
       return inside && shut ? open({ skill: 'leave_base', args: {}, why: 'the doorway was closed for the night', timeout: 60 }) : null;
     }],
+    // With a farm or a job at home, home is not left far behind. On game day 66 a search for
+    // seeds, 32 blocks of grass at a time, ended 290 blocks south, and the walk back and a trip
+    // to a full chest were the whole day.
+    ['near home', () => {
+      const busyAtHome = memory.farmField || (memory.works ?? []).some((w) => !w.done);
+      if (!home || !busyAtHome || fromHome <= 150 || world.night) return null;
+      if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      return open({ skill: 'goto', args: { x: home.x, z: home.z, range: 50 }, why: `${Math.round(fromHome)} blocks from home, where the farm and the work are`, timeout: 300 });
+    }],
+    // The farm is worked (CT, 2026-10-04: "work the farm so you will have food"): looked over
+    // every five minutes by day for what is ripe, cut, sown again, and the wheat baked.
+    ['the farm', () => {
+      const field = memory.farmField;
+      if (!field || world.night || time > 11000 || now - (field.tendedAt ?? 0) < 300000) return null;
+      if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      if (Math.hypot(here.x - field.x - 10, here.z - field.z - 5) > 120) return null;
+      return open({ skill: 'tend', args: {}, why: 'the farm is looked over for what is ripe', timeout: 240 });
+    }],
+    // What is gathered is kept. Once there is a storehouse (memory.store, from skills/build.mjs),
+    // a pack that is nearly full is emptied into it by day: on 2026-10-04 the pack was full from
+    // morning to night, the one chest in the base too, and stone, saplings and seeds' worth of
+    // room were thrown on the ground. Worth the walk from anywhere near; done in passing when close.
+    ['store', () => {
+      const house = memory.store;
+      if (!house || world.night || time > 11400 || now - (house.fullAt ?? 0) < 1800000) return null;
+      // Not in the middle of building: what is carried then is what is being built with. The
+      // hall's chests and its planks were each put away between two steps of the job.
+      if ((memory.works ?? []).some((w) => !w.done && (w.kind === 'hall' || w.kind === 'build'))) return null;
+      if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      // Only with something to put away: a pack full of what is kept on the player (tools, food,
+      // a working amount of wood and stone) sent it to the storehouse six times for nothing.
+      if (surplusOf) {
+        const best = ['_pickaxe', '_sword', '_axe', '_hoe', '_shovel'].map((ending) => api.bestOf(ending)?.name).filter(Boolean);
+        if (!surplusOf(bot.inventory.items(), best, Object.fromEntries(api.spares()).diamond ?? 0).length) return null;
+      }
+      const far = Math.hypot(here.x - house.door.outside.x, here.z - house.door.outside.z);
+      const free = bot.inventory.emptySlotCount();
+      if (far > 120 || !(free <= 4 || (far < 24 && free <= 12))) return null;
+      return open({ skill: 'store', args: {}, why: `${36 - free} of 36 places in the pack are taken`, timeout: 120 });
+    }],
+    // Work a person asked for on the land (a farm, ground levelled, trees felled: land.mjs
+    // reads the request, skills/work.mjs does one piece of it and looks at the world again).
+    // By day, and not begun so late that dusk finds the player out in the field: on 2026-10-04
+    // the night reflex dug its shelter in the middle of the farm it was building.
+    ['works', () => {
+      // Sowing is slow (seeds come a few at a time from grass) and never urgent: it goes last,
+      // and a job whose step has just failed gives way to the next one.
+      const jobs = (memory.works ?? []).filter((w) => !w.done).sort((a, b) => (a.kind === 'sow') - (b.kind === 'sow'));
+      const stepFor = (w) => ({ skill: 'work', args: { id: w.id }, why: `${w.kind}, asked for by ${w.by}`, timeout: Math.max(60, Math.min(600, Math.round((12300 - time) / 20))) });
+      const job = jobs.find((w) => !world.blocked(stepFor(w))) ?? jobs[0];
+      if (!job || world.night || time > 11200) return null;
+      // Felling is paid for in falls: the first morning of it took the player from 20 health to
+      // 14. Hurt, the work waits. (It also waited when fewer than 2 pieces of food were carried,
+      // and on the morning of game day 66 that was every job stopped by one apple: with no
+      // animal in sight there was nothing the food goal could do. Food is the farm's to give.)
+      if (bot.health < 12) return null;
+      return open({ skill: 'work', args: { id: job.id }, why: `${job.kind}, asked for by ${job.by}`, timeout: Math.max(60, Math.min(600, Math.round((12300 - time) / 20))) })
+        ?? { stuck: `the ${job.kind} ${job.by} asked for keeps failing` };
+    }],
     // A chest in the base, and what is not needed on a trip put into it whenever the player is
     // in the room: every death under ground so far took everything it had made.
     ['stash', () => {
       const chest = memory.baseHas?.chest;
       const b = memory.base;
-      if (!chest || !b) return null;
+      if (!chest || !b || chestFull) return null;
       const inside = Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2;
       // What counts as a spare is lib.mjs's to say, so that this goal and the skill agree: they
       // did not, and the goal asked ten times for a stash that had nothing it would put in.
@@ -385,7 +488,11 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['bank', () => {
       const chest = memory.baseHas?.chest;
       const b = memory.base;
-      if (!chest || !b || (have.diamond ?? 0) < 16 || world.night) return null;
+      // Only diamonds the chest would take: the ones kept back for making gear are not spare, and
+      // with 26 carried and all 26 kept, every step in the mine was followed by a walk home that
+      // put nothing in (game day 81).
+      const spareDiamonds = Object.fromEntries(api.spares()).diamond ?? 0;
+      if (!chest || !b || spareDiamonds < 16 || world.night || chestFull) return null;
       if (Math.abs(here.x - 0.5 - b.x) <= 2.6 && Math.abs(here.z - 0.5 - b.z) <= 2.6 && Math.abs(here.y - b.y) <= 2) return null;
       const why = `${have.diamond} diamonds to the chest`;
       if (b.y - here.y > 16) return open({ skill: 'surface', args: {}, why, timeout: 600 });
@@ -412,7 +519,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['The Parrots and the Bats', () => {
       if (earned.includes('The Parrots and the Bats') || world.night) return null;
       if (world.creatures.filter((name) => name === 'chicken').length < 2) return null;
-      if ((have.wheat_seeds ?? 0) < 2) return plan('wheat_seeds', 2, world);
+      // With a farm, seeds come from the harvest (tend.mjs keeps two back for this): they are
+      // not gone looking for. That search, 32 blocks of grass at a time, is what took the
+      // player 290 blocks south on game day 66 and into the lake it drowned in on day 69.
+      if ((have.wheat_seeds ?? 0) < 2) return memory.farmField ? null : plan('wheat_seeds', 2, world);
       return open({ skill: 'breed', args: { animal: 'chicken', food: 'wheat_seeds' }, why: 'two chickens in sight and seeds in the pack', timeout: 90 });
     }],
     ['food', food],
@@ -461,6 +571,9 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       // Not in the late afternoon: seeds are gathered 30 blocks out, "home by dusk" calls it
       // back from 20, and the two took turns from 09:01 on 2026-10-04 until the bed would take it.
       if (world.night || !home || fromHome > 100 || (memory.places?.bed && time >= 10000)) return null;
+      // With the farm (memory.farmField, tended by the goal "the farm") this first plot by the
+      // lake is left: on game day 85 it was walked to six times running with nothing to do there.
+      if (memory.farmField) return null;
       if (!Object.keys(have).some((name) => name.endsWith('_hoe'))) return plan('wooden_hoe', 1, world);
       const seeds = have.wheat_seeds ?? 0;
       if (seeds < 6 && !(memory.farm?.planted >= 6)) return open({ skill: 'gather_seeds', args: { count: 6 - seeds }, why: `${seeds} seeds, and 6 make a plot`, timeout: 120 });
@@ -562,6 +675,7 @@ export async function learn({ row, memory, fresh }) {
     if (!row.ok && !interrupted) memory.heading = DIRECTIONS[(DIRECTIONS.indexOf(direction) + 1) % 4];
   }
   if (row.skill === 'recover') delete memory.lastDeath;
+  if (row.skill === 'stash' && !row.ok && /destination full/.test(row.note ?? '')) memory.chestFull = Date.now();
   if (row.skill === 'come') delete memory.order;
   // A follow that ended for any reason but a reflex (a fight, a creeper) is over: the time was
   // up, the person went out of sight, or someone said stop.

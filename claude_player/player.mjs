@@ -44,7 +44,11 @@ async function serve(gamePort, startAuto) {
   const mineflayer = (await import('mineflayer')).default;
   const { pathfinder, Movements } = (await import('mineflayer-pathfinder')).default;
   mkdirSync(DATA, { recursive: true });
-  const earned = readJson(EARNED, {});
+  // What this player has earned: { title: when }. If the file holds anything else (for 15
+  // hours on 2026-10-04 it held the game's whole list, written there by advancements.mjs),
+  // the record is begun again and filled from the server's log as each is announced.
+  const read = readJson(EARNED, {});
+  const earned = read && typeof read === 'object' && !Array.isArray(read) && Object.values(read).every((when) => typeof when === 'string') ? read : {};
   const memory = readJson(MEMORY, {});
   const saveMemory = () => writeFileSync(MEMORY, JSON.stringify(memory, null, 1));
   // Deaths are counted from the journal, which has all of them: the count kept in memory only
@@ -76,6 +80,10 @@ async function serve(gamePort, startAuto) {
   let lastProblem = null;
   let stalls = 0;          // walks in a row that went nowhere
   let lastReconnect = 0;
+  let diedAt = 0;          // when it last died, until the respawn has been given a new connection
+  let forced = [];         // when the server last put the player back where it was
+  let lastPutBack = 0;     // when that was last written down
+  let deliberate = false;  // the connection is being ended here, to begin a new one
   const reflexState = { holdUntil: 0 };
   const say = (text, to = null) => {
     const line = String(text).slice(0, 240);
@@ -107,6 +115,23 @@ async function serve(gamePort, startAuto) {
     if (`${kind}:${message}` !== lastProblem) event(kind, { message });
     lastProblem = `${kind}:${message}`;
   };
+  // An error thrown out of a timer inside a library ended the process, and the player with
+  // it, at 20:03 on 2026-10-04: the pathfinder's tick read a value it had just emptied, after
+  // opening a fence gate. Such an error is journalled, what is running is stopped, and play
+  // goes on. More than 5 in a minute is not a slip, and the process ends as it did before.
+  const crashes = [];
+  for (const kind of ['uncaughtException', 'unhandledRejection']) {
+    process.on(kind, (error) => {
+      const now = Date.now();
+      crashes.push(now);
+      while (crashes.length && now - crashes[0] > 60000) crashes.shift();
+      console.error(error);
+      try { problem('brain_error', `${kind} caught (${crashes.length} in the last minute): ${String(error?.stack ?? error).slice(0, 240)}`); } catch { /* the journal is not there */ }
+      try { bot?.pathfinder?.setGoal(null); } catch { /* no pathfinder yet */ }
+      try { stopAll(`an error inside a library: ${String(error?.message ?? error).slice(0, 80)}`); } catch { /* nothing running */ }
+      if (crashes.length > 5) setTimeout(() => process.exit(3), 200);
+    });
+  }
 
   function connect() {
     const started = Date.now();
@@ -123,8 +148,44 @@ async function serve(gamePort, startAuto) {
       lastHealth = b.health ?? 20;
       ready = true;
       event('spawn', { where: where() });
+      // After a death, a fresh connection. After death 25 (22:17:37 on 2026-10-04) this
+      // player's own idea of where it was and the server's came apart: here it climbed about
+      // in a pit for 12 minutes, there it stood still at its door, and nothing it did took.
+      // The same was seen after eight deaths on the first day. A new connection begins from
+      // where the server has the player, and costs a few seconds.
+      if (diedAt && Date.now() - diedAt < 60000 && !quitting) {
+        diedAt = 0;
+        setTimeout(() => {
+          if (bot !== b || quitting) return;
+          lastReconnect = Date.now();
+          event('reconnect', { why: 'a fresh connection after a death', where: where() });
+          deliberate = true;
+          b.quit();
+        }, 2500);
+      }
+    });
+    // The server putting the player back where it was, again and again, is the two having
+    // come apart while it is alive: 8 times in 15 s, and the connection is begun again.
+    b.on('forcedMove', () => {
+      // Not in water: the server corrects a swimmer all the time (this fired twice in its
+      // first hour, both times in water, and a new connection changes nothing about that).
+      if (b.entity?.isInWater) return;
+      const now = Date.now();
+      forced = forced.filter((at) => now - at < 15000);
+      forced.push(now);
+      // Written down, and no more than that. It began a new connection three times in its
+      // first three hours and was wrong each time: swimming twice, and once climbing the hatch,
+      // a column one block wide, where the server corrects every jump. The two coming apart has
+      // only been seen after a death, which has its own new connection, and three walks in a
+      // row that go nowhere still have theirs.
+      if (forced.length >= 8 && now - lastPutBack > 120000) {
+        forced = [];
+        lastPutBack = now;
+        event('put_back', { times: 8, seconds: 15, where: where(), doing: current?.name ?? null });
+      }
     });
     b.on('death', () => {
+      diedAt = Date.now();
       event('death', { where: where(), lost: lastCarried, doing: current?.name ?? null, night: !b.time?.isDay });
       memory.lastDeath = { at: Date.now(), where: where(), lost: lastCarried };
       memory.deaths = (memory.deaths ?? 0) + 1;
@@ -181,7 +242,10 @@ async function serve(gamePort, startAuto) {
       ready = false;
       event('end', { reason: String(reason) });
       stopAll('disconnected');
-      failures = Date.now() - started > 60000 ? 0 : failures + 1;
+      // A connection this process ended on purpose is not a failure to connect: eight deaths
+      // close together would otherwise count as eight and end the process.
+      failures = deliberate || Date.now() - started > 60000 ? 0 : failures + 1;
+      deliberate = false;
       if (quitting || failures > 8) return setTimeout(() => process.exit(quitting ? 0 : 2), 200);
       setTimeout(connect, Math.min(60000, 5000 * 2 ** failures));
     });
@@ -266,12 +330,15 @@ async function serve(gamePort, startAuto) {
       // Only a walk that timed out counts. "No path" is the pathfinder saying there is no
       // way, which is true when the player has shut itself in: on its first day this fired 5
       // times in 12 minutes for that, and a new connection changes nothing about a wall.
-      const wentNowhere = !row.ok && row.moved === 0 && /took too long/.test(row.note ?? '') && !/No path/.test(row.note ?? '');
+      // "Nowhere" is 3 blocks or fewer: with the two apart, the player moves in its own idea
+      // of the world and the count read 1, 3 and 0 for three walks to a bed 3 blocks off.
+      const wentNowhere = !row.ok && (row.moved ?? 0) <= 3 && /took too long|out of time after/.test(row.note ?? '') && !/No path/.test(row.note ?? '');
       stalls = wentNowhere ? stalls + 1 : row.moved > 0 ? 0 : stalls;
       if (stalls >= 3 && Date.now() - lastReconnect > 600000) {
         lastReconnect = Date.now();
         stalls = 0;
         event('reconnect', { why: 'three walks in a row went nowhere', where: where() });
+        deliberate = true;
         bot.quit();
         await sleep(3000);
         continue;

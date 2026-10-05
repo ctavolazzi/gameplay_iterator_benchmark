@@ -5,6 +5,7 @@
 import pathfinding from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { diffCarried, fuelNeeded, shutIn } from './pure.mjs';
+import { keptWhole } from './blueprint.mjs';
 
 const { goals } = pathfinding;
 export { goals, Vec3 };
@@ -36,7 +37,9 @@ const FURNITURE = /^(crafting_table|furnace|chest|barrel|torch|wall_torch|ladder
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 // What is not worth a place in the chest or, past a stack of the building stones, in the pack.
 export const JUNK = /^(cobblestone|cobbled_deepslate|stone|tuff|diorite|andesite|granite|gravel|dirt|leaf_litter|feather|rotten_flesh|egg|pumpkin_seeds|flint|white_banner|ladder|.*_sapling)$/;
-const KEPT_ON_THE_PLAYER = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed|crafting_table|furnace|shield)$/;
+// Iron too, raw or smelted: on game day 79 the shield goal dug one ore, the walk home with the
+// diamonds put it in the chest as a spare, and the shield goal dug another, six times round.
+const KEPT_ON_THE_PLAYER = /^(stick|torch|coal|charcoal|bucket|water_bucket|.*_log|.*_planks|cooked_.*|bread|wheat_seeds|.*_bed|crafting_table|furnace|shield|raw_iron|iron_ingot)$/;
 const WORN_SLOTS = [5, 6, 7, 8, 45];
 
 // What to take out of the chest to be fit to go out again: [[name, count]]. have is what the
@@ -133,6 +136,44 @@ export function make(bot, signal, memory = {}) {
   // Turn 7: four of twelve deaths were drowning. A path through water now costs six times a path round it.
   if (movements) movements.liquidCost = 6;
   if (movements) movements.exclusionAreasBreak = memory.base ? [(block) => (inBase(block.position) ? 1000 : 0)] : [];
+  // Nor does a path dig or put a block down in a field the player has built (memory.farmField,
+  // set by skills/work.mjs). On 2026-10-04 the way into the fenced farm, and out of it, was a
+  // block of earth set down by the fence and a hop over on to the tilled ground. The field is
+  // entered by its gate (skills/build_farm.mjs through()); the pathfinder's own gate opening
+  // (canOpenDoors) is left off, because it ends the process.
+  // Nor through the hall once it is built (memory.hall, from skills/build_hall.mjs): its shell
+  // and the treads of its stairs stay whole. They were made to close the pits by the base, and
+  // one tread was dug away by a search for coal the same morning.
+  const hall = memory.hall?.whole && memory.hall.c ? { c: memory.hall.c, steps: memory.hall.steps } : null;
+  // Guarded with the shell: the cells beside the stairs (closed against the pits; where they
+  // were closed with stone and not planks, the pathfinder went through one within the hour).
+  // Not guarded: the hatch, the one column under the hall's far corner (south-east). It is the
+  // way down to the mine and back, so that there is one, and it is not the lawn or a wall.
+  const beside = (at) => {
+    const j = at.z - (hall.c.z + 5);
+    return Math.abs(at.x - (hall.c.x + 6)) === 1 && j >= 0 && j < hall.steps && at.y >= hall.c.y + j - 1 && at.y <= Math.min(hall.c.y + j + 2, hall.c.y + hall.steps - 1);
+  };
+  const guarded = hall ? (at) => (keptWhole(hall, at) || beside(at)) && !(at.x === hall.c.x + 9 && at.z === hall.c.z + 3 && at.y < hall.c.y) : null;
+  if (movements && hall) movements.exclusionAreasBreak = [...movements.exclusionAreasBreak, (block) => (block.position && guarded(block.position) ? 1000 : 0)];
+  // And not by anything else either. Every dig the player makes goes through bot.dig, so the
+  // guard is put there, once for each connection: 25 minutes after the hall was whole, two
+  // blocks of its floor were gone, cut from below by a skill that climbs out of a pit and
+  // had never heard of a hall. (FelsenBerry calls this a digguard; RESEARCH.md.)
+  bot.claudeGuard = guarded;
+  if (!bot.claudeDigWrapped) {
+    const dig = bot.dig.bind(bot);
+    bot.dig = (block, ...rest) => (bot.claudeGuard && block?.position && bot.claudeGuard(block.position)
+      ? Promise.reject(new Error(`the ${block.name} at ${block.position.x} ${block.position.y} ${block.position.z} is part of the hall, and is not dug`))
+      : dig(block, ...rest));
+    bot.claudeDigWrapped = true;
+  }
+  const field = memory.farmField;
+  const inField = (at) => !!field && !!at && at.x >= field.x - 1 && at.x <= field.x + 21 && at.z >= field.z - 1 && at.z <= field.z + 11
+    && at.y >= field.level - 2 && at.y <= field.level + 5;
+  if (movements && field) {
+    movements.exclusionAreasBreak = [...movements.exclusionAreasBreak, (block) => (inField(block.position) ? 1000 : 0)];
+    movements.exclusionAreasPlace = [(block) => (inField(block.position) ? 1000 : 0)];
+  }
   function inBase(at) {
     const base = memory.base;
     if (!base || !at) return false;
@@ -236,16 +277,100 @@ export function make(bot, signal, memory = {}) {
     await offTheBed();
     const from = bot.entity.position.clone();
     const started = Date.now();
+    // On foot first. The pathfinder digs and builds its way as readily as it walks, and under
+    // the open sky that is how the ground round the base came to be holes, steps of earth and
+    // towers (94 blocks put down in one morning's felling, 2026-10-04). So above ground it is
+    // asked first whether there is a way with nothing dug and nothing placed, for up to a
+    // third of a second, and takes that way if there is one. (Mindcraft's goToGoal does the same.)
+    const moves = bot.pathfinder.movements;
+    const was = { canDig: moves.canDig, towers: moves.allow1by1towers, scaffold: moves.scafoldingBlocks };
+    const harsh = () => { moves.canDig = was.canDig; moves.allow1by1towers = was.towers; moves.scafoldingBlocks = was.scaffold; };
+    let onFoot = false;
+    if (moves.canDig && exposed() && !memory.pass?.brave) {
+      moves.canDig = false;
+      moves.allow1by1towers = false;
+      moves.scafoldingBlocks = [];
+      try {
+        const asked = Date.now();
+        let found = null;
+        for (const step of bot.pathfinder.getPathFromTo(moves, bot.entity.position, goal, { timeout: 350, tickTimeout: 50 })) {
+          found = step.result;
+          if (found.status !== 'partial' || Date.now() - asked > 350) break;
+        }
+        onFoot = found?.status === 'success' && found.path.length <= 220;
+      } catch {
+        onFoot = false;
+      }
+      if (!onFoot) harsh();
+    }
     try {
       await within(bot.pathfinder.goto(goal), ms, what);
     } catch (error) {
       bot.pathfinder.setGoal(null);
-      throw error;
+      // The way on foot was lost on the way (the world changed, or the goal moved): once more,
+      // with digging and building allowed, in what is left of the time.
+      const stopped = signal?.aborted || /took too long|stopped|out of time/.test(error?.message ?? '');
+      const left = ms - (Date.now() - started);
+      if (!onFoot || stopped || left < 3000) { harsh(); throw error; }
+      harsh();
+      onFoot = false;
+      try {
+        await within(bot.pathfinder.goto(goal), left, what);
+      } catch (again) {
+        bot.pathfinder.setGoal(null);
+        throw again;
+      }
+    } finally {
+      if (onFoot) harsh();
     }
     if (strict && Date.now() - started < 1500 && bot.entity.position.distanceTo(from) < 0.5
       && typeof goal.isEnd === 'function' && !goal.isEnd(bot.entity.position.floored())) {
       throw new Error(`No path to the goal! (${what}: the pathfinder gave no way at all)`);
     }
+  }
+
+  // One look for the atlas (atlas.mjs): every block of the named kinds within 40 blocks, and
+  // every creature of the named kinds in sight, as [{ name, x, y, z }]. Looks only.
+  function prospect(blocks, creatures) {
+    const ids = blocks.map((name) => bot.registry.blocksByName[name]?.id).filter((id) => id !== undefined);
+    const out = [];
+    for (const at of bot.findBlocks({ matching: ids, maxDistance: 40, count: 400 })) {
+      const block = bot.blockAt(at);
+      if (block) out.push({ name: block.name, x: at.x, y: at.y, z: at.z });
+    }
+    const wanted = new Set(creatures);
+    for (const e of Object.values(bot.entities)) {
+      if (e === bot.entity || !wanted.has(e.name) || !e.position) continue;
+      out.push({ name: e.name, x: Math.round(e.position.x), y: Math.round(e.position.y), z: Math.round(e.position.z) });
+    }
+    return out;
+  }
+
+  // Through a door or a gate on foot: walk to `from`, open it, go straight to `to` on the other
+  // side, and shut it behind. All three are places to stand (Vec3 of the feet). The pathfinder
+  // is not asked to open anything: its own way of doing it ends the process (RESEARCH.md).
+  // True when the player ends up standing at `to`.
+  async function through(barrier, from, to) {
+    const openable = () => /_door$|_fence_gate$/.test(nameAt(barrier) ?? '');
+    const isOpen = () => String(bot.blockAt(barrier)?.getProperties?.().open) === 'true';
+    const set = async (open) => {
+      if (!openable() || isOpen() === open) return;
+      await bot.lookAt(barrier.offset(0.5, 0.5, 0.5), true);
+      await within(bot.activateBlock(bot.blockAt(barrier)), 4000, open ? 'opening it' : 'shutting it').catch(() => {});
+      await sleep(300);
+    };
+    const there = (at, slack) => Math.abs(bot.entity.position.x - at.x - 0.5) < slack && Math.abs(bot.entity.position.z - at.z - 0.5) < slack;
+    if (!there(from, 0.45)) await walk(new goals.GoalBlock(from.x, from.y, from.z), 40000, 'walking to the door');
+    await settle();
+    await set(true);
+    await bot.lookAt(to.offset(0.5, 1.2, 0.5), true);
+    bot.setControlState('forward', true);
+    for (let i = 0; i < 30 && !there(to, 0.35); i++) await sleep(100);
+    bot.clearControlStates();
+    await sleep(150);
+    const feet = bot.entity.position.floored();
+    if (!(feet.x === barrier.x && feet.z === barrier.z)) await set(false);
+    return there(to, 0.6);
   }
 
   // How many logs lie between this log and the ground under its trunk. null for a branch,
@@ -988,10 +1113,14 @@ export function make(bot, signal, memory = {}) {
     const feet = bot.entity.position.floored();
     const foes = Object.values(bot.entities).filter(isHostile).map((e) => e.position);
     const keepClear = others();
+    // Not in or beside anything built. On 2026-10-04 the shelter was dug twice in the farm the
+    // player was building, 3 blocks down through the path between the plots.
+    const built = bot.findBlocks({ matching: (b) => /^(farmland|wheat|carrots|potatoes|beetroots|.*_fence|.*_fence_gate|.*_planks|.*_bed|chest|.*_door|ladder)$/.test(b.name), maxDistance: 18, count: 120 });
     let best = null;
     for (let dx = -8; dx <= 8; dx++) for (let dz = -8; dz <= 8; dz++) for (let dy = -12; dy <= 2; dy++) {
       const at = feet.offset(dx, dy, dz);
       if (solid(at) || solid(at.offset(0, 1, 0))) continue;
+      if (built.some((b) => Math.abs(b.x - at.x) <= 4 && Math.abs(b.z - at.z) <= 4 && Math.abs(b.y - at.y) <= 6)) continue;
       // Turn 3: it dug in on a river bed and lost 13.5 health drowning. Nowhere wet.
       if ([[0, 0], ...SIDES].some(([wx, wz]) => [0, 1, 2].some((up) => /water|lava/.test(nameAt(at.offset(wx, up, wz)) ?? '')))) continue;
       if (![1, 2, 3].every((down) => GROUND.test(nameAt(at.offset(0, -down, 0)) ?? ''))) continue;
@@ -1222,5 +1351,5 @@ export function make(bot, signal, memory = {}) {
 
   return { liquidNear, fillBucket, kit, kitWants: () => kitFrom(have(), memory.chest ?? {}), markJunk, spares, roomShutIn, getUp, hasFood, stash, bestOf, dangerous, breed, snug, burrow, airNear, wetAt, heightAboveGround, downFromTree, inBase, crowded, placeAt, fill, digOut, sleepInBed, solid, night, exposed, canSee, enclosed, digIn, check, within, sleep, carried, have, find, nameAt, nearest,
     nearestHostile, settle, walk, reachable, digAt, pickUp, collectOne, tableNear, craft, placeNear, smelt, eat,
-    unworn, wear, hunt, gatherSeeds, plantSeed, farm, goals, Vec3, round, isHostile };
+    unworn, wear, hunt, gatherSeeds, plantSeed, farm, goals, Vec3, round, isHostile, through, prospect };
 }

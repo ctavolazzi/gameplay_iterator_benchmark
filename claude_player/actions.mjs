@@ -57,3 +57,71 @@ export async function score(ctx, args = {}) {
   if (args.say) ctx.say(line, 'everyone');
   return { ok: true, line, since: result.since, score: result.score, rule: result.challenge.rule };
 }
+
+// What stands where the bigger base is planned (blueprint.mjs), read from the world as the
+// player knows it. Looks only. { steps } is how many stairs to look along.
+export async function survey(ctx, args = {}) {
+  const { hallPlan } = await ctx.fresh('blueprint.mjs');
+  const lib = await ctx.fresh('lib.mjs');
+  const base = ctx.memory.base;
+  if (!base) throw new Error('no base remembered');
+  const plan = hallPlan(base, Math.min(24, args.steps ?? 16));
+  const at = ([x, y, z]) => ctx.bot.blockAt(new lib.Vec3(x, y, z));
+  const count = (cells) => {
+    const out = {};
+    for (const cell of cells) { const name = at(cell)?.name ?? 'not loaded'; out[name] = (out[name] ?? 0) + 1; }
+    return out;
+  };
+  const whole = (block) => !!block && block.boundingBox === 'block';
+  const all = [...plan.interior, ...plan.shell, ...plan.entrance, ...plan.stairs.flatMap((s) => [s.floor, ...s.clear])];
+  const notable = all.map((cell) => ({ cell, name: at(cell)?.name ?? '' }))
+    .filter((b) => /water|lava|chest|_bed|crafting_table|furnace|_door|torch|ladder|_planks|_stairs|_slab|glass|fence|sign|barrel/.test(b.name));
+  // How many stairs until the open sky: the first whose headroom is under nothing but air.
+  let steps = null;
+  for (const [j, stair] of plan.stairs.entries()) {
+    const [x, y, z] = stair.clear[0];
+    let open = true;
+    for (let up = 0; up <= 40 && open; up++) if (whole(at([x, y + up, z])) && !/leaves|_log$/.test(at([x, y + up, z]).name)) open = false;
+    if (open && !whole(at(stair.clear[2])) === false) { /* the stair itself is still rock: it is dug */ }
+    if (open) { steps = j; break; }
+  }
+  return { ok: true, base, interior: count(plan.interior), shellGaps: plan.shell.filter((cell) => !whole(at(cell))).length, shell: plan.shell.length,
+    entrance: plan.entrance.map((cell) => at(cell)?.name), stairs: plan.stairs.slice(0, 12).map((s, j) => `${j}: on ${at(s.floor)?.name}, through ${s.clear.map((cell) => at(cell)?.name).join('/')}`),
+    stepsToSky: steps, notable: notable.slice(0, 30).map((b) => `${b.name} ${b.cell.join(' ')}`),
+    players: Object.values(ctx.bot.players).filter((p) => p.entity && p.username !== ctx.bot.username).map((p) => `${p.username} ${Math.round(p.entity.position.x)} ${Math.round(p.entity.position.y)} ${Math.round(p.entity.position.z)}`) };
+}
+
+// What the player has seen and where (atlas.mjs), nearest first: `node claude_player/player.mjs atlas`.
+export async function atlas(ctx) {
+  const { summary } = await ctx.fresh('atlas.mjs');
+  const at = ctx.bot.entity.position;
+  return { ok: true, from: { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) }, known: summary(ctx.memory.atlas, at) };
+}
+
+// The jobs of work on the land (skills/work.mjs): what is open and what is done.
+export async function works(ctx) {
+  return { ok: true, works: ctx.memory.works ?? [], field: ctx.memory.farmField ?? null };
+}
+
+// Give the player a job as a person in chat would: { kind: 'farm' | 'clear' | 'trees', by,
+// near: { x, z }, standAt, radius }, or { say: 'the words' } to have land.mjs read them.
+// { drop: id } takes one off the list. The brain does the first open one by day.
+export async function job(ctx, args = {}) {
+  ctx.memory.works ??= [];
+  if (args.drop) {
+    ctx.memory.works = ctx.memory.works.filter((w) => w.id !== args.drop);
+    ctx.saveMemory();
+    return { ok: true, works: ctx.memory.works };
+  }
+  const { asksFor } = await ctx.fresh('land.mjs');
+  const asked = args.say ? asksFor(args.say) : [{ kind: args.kind, ...(Number.isInteger(args.standAt) && { standAt: args.standAt }), ...(args.what && { what: String(args.what) }) }];
+  if (!asked.length || asked.some((a) => !['farm', 'build', 'hall', 'clear', 'trees'].includes(a.kind))) throw new Error('say a kind (farm, build, hall, clear or trees), or the words to read');
+  const made = asked.map((a, i) => ({ id: `${Date.now().toString(36)}${i}`, ...a, by: String(args.by ?? 'the session'),
+    ...(args.near && { near: { x: Math.round(args.near.x), z: Math.round(args.near.z) } }),
+    ...(Number.isInteger(args.radius) && { radius: args.radius }),
+    ...(args.site && { site: args.site }), ...(Number.isInteger(args.level) && { level: args.level }), asked: new Date().toISOString() }));
+  ctx.memory.works.push(...made);
+  ctx.saveMemory();
+  ctx.event('order', { kind: 'work', jobs: made.map((w) => `${w.kind} ${w.id}`) });
+  return { ok: true, added: made };
+}

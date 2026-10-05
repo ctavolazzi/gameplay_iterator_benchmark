@@ -19,6 +19,9 @@ const load = (file) => {
   const url = new URL(file, import.meta.url);
   return import(`${url.href}?v=${statSync(url).mtimeMs}`);
 };
+// What a message asks for by way of work on the land. Read when this file loads: after a
+// change to land.mjs's asksFor(), save this file too.
+const { asksFor } = await load('./land.mjs');
 
 // Whether a message asks this player to get into its bed. On 2026-10-04 fogsift said "I went
 // to sleep" and "Come on everybody sleep plz": the first was answered with a status line and
@@ -38,6 +41,12 @@ export function reads(message) {
   const short = text.trim().split(/\s+/).length <= 5;
   if (/\b(rise and shine|wake up|wakey|get up|good morning)\b/.test(text)) return 'morning';
   if (sleepAsked(text)) return 'bed';
+  // fogsift, lying in his bed at 21:13 on 2026-10-04: "How far are you from bed?" The answer
+  // he got was where the bed is and what the player was doing, and not how far.
+  if (/\bhow (far|close|near|long)\b.*\b(bed|sleep|home|base)\b/.test(text)) return 'bedtrip';
+  // Work on the land, before the notes: "the trees should be finished up and the wood
+  // harvested" has a "should" in it and is a job, not a tip. asksFor() leaves the tips alone.
+  if (asksFor(message).length) return 'works';
   // Before the greetings: CT's first tip began "Hey claude, if there's already a crafting
   // table near you..." and was answered with "Hello fogsift. I am digging for iron".
   if (!short && ADVICE.test(text)) return 'note';
@@ -155,6 +164,19 @@ export async function heard({ bot, memory, username, message, status, event, say
     // Every player has to be in a bed for the night to pass (the world's rule since 06:40 on
     // 2026-10-04), so when someone asks, this player goes: it may be the one holding the night up.
     answer = toBed({ bot, memory, who: username, stop });
+  } else if (asked === 'bedtrip') {
+    // How far the bed is, in blocks and in seconds, and whether the night is long enough.
+    const bedAt = memory.places?.bed;
+    const hour = bot.time?.timeOfDay ?? 0;
+    if (bot.isSleeping) answer = 'I am in my bed.';
+    else if (!bedAt) answer = 'I have no bed just now.';
+    else {
+      const trip = bedTrip(bot.entity.position, bedAt, hour);
+      const flat = Math.round(Math.hypot(bot.entity.position.x - bedAt.x, bot.entity.position.z - bedAt.z));
+      const night = hour >= 12541 && hour < 23460;
+      answer = `${flat} blocks from my bed${trip.up > 3 ? ` and ${trip.up} under it` : ''}: about ${trip.need} s away.`
+        + (night ? ` The night has ${trip.left} s left${trip.need > trip.left ? ', so I will not be in it before morning' : ''}.` : '');
+    }
   } else if (asked === 'note') {
     appendFileSync(NOTES, `${JSON.stringify({ at: new Date().toISOString(), username, message, where: status.where, doing: status.doing?.skill ?? null })}\n`);
     event('player_note', { username, message });
@@ -177,6 +199,25 @@ export async function heard({ bot, memory, username, message, status, event, say
     memory.order = { kind: 'come', player: username, until: now + 90000 };
     stop();
     answer = `Coming to you. I am ${away}.`;
+  } else if (asked === 'works') {
+    // Work on the land: a farm, ground levelled, trees felled (land.mjs reads which). Each
+    // becomes a job by where the person stands; skills/work.mjs chooses the ground and does
+    // it a piece at a time by day. The same kind of work asked for again nearby is the same job.
+    const land = await load('./land.mjs');
+    const at = them ? { x: Math.floor(them.position.x), y: Math.floor(them.position.y), z: Math.floor(them.position.z) } : null;
+    memory.works ??= [];
+    const added = [];
+    for (const [i, job] of land.asksFor(message).entries()) {
+      const same = memory.works.some((w) => !w.done && w.kind === job.kind && (!at || !w.near || Math.hypot(w.near.x - at.x, w.near.z - at.z) < 24));
+      if (same) continue;
+      added.push({ id: `${now.toString(36)}${i}`, ...job, by: username, ...(at && { near: { x: at.x, z: at.z } }), asked: new Date().toISOString() });
+    }
+    memory.works.push(...added);
+    event('order', { kind: 'work', from: username, jobs: added.map((w) => `${w.kind} ${w.id}`) });
+    const words = { farm: 'a farm, on the flattest ground I can find there', build: 'a storehouse with chests in it', hall: 'a bigger base: a hall beside my bedroom, with stairs up to the open air', clear: 'the ground brought down to one level', trees: 'the trees felled whole and the wood kept' };
+    answer = added.length
+      ? `On my list, ${username}: ${list(added.map((w) => words[w.kind]))}. ${at ? 'Round where you are standing.' : 'Round my home, since I cannot see you.'} I work at it by day, a piece at a time, and say where before I dig.`
+      : `That is on my list already, ${username}, and I am at it by day.`;
   } else if (asked === 'farm') {
     // Where a person stands is where the plot goes: by the water nearest to that place.
     if (!them) answer = 'I cannot see you from here. Stand where you want the plot and say it again when I am near.';
