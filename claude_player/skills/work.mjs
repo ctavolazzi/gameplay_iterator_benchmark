@@ -33,6 +33,13 @@ export default async function work({ bot, api, memory, skill, note }, { id = nul
   // A full pack loses whatever is made or dug next (the first farm's torches and fences).
   if (bot.inventory.emptySlotCount() < 4) tell((await skill('make_room')).note);
 
+  // Work on the land is done from the land. At dawn on 2026-10-05 the brain gave the first
+  // job of the day to a player 32 blocks down its mine.
+  if (memory.home && here.y < memory.home.y - 8) {
+    const up = await skill('surface', {});
+    tell(`Up first: ${up.note}`);
+    if (bot.entity.position.y < memory.home.y - 8) return more(up.ok, 'Still under ground.');
+  }
   // The ground is read where the job is. From far off it is not loaded: walk there first.
   if (Math.hypot(here.x - near.x, here.z - near.z) > 40) {
     await api.walk(new api.goals.GoalNearXZ(near.x, near.z, 12), 120000, `walking to where ${job.by} asked`);

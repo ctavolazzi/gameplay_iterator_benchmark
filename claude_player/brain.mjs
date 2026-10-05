@@ -380,7 +380,11 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     // By day, and not begun so late that dusk finds the player out in the field: on 2026-10-04
     // the night reflex dug its shelter in the middle of the farm it was building.
     ['works', () => {
-      const job = (memory.works ?? []).find((w) => !w.done);
+      // Sowing is slow (seeds come a few at a time from grass) and never urgent: it goes last,
+      // and a job whose step has just failed gives way to the next one.
+      const jobs = (memory.works ?? []).filter((w) => !w.done).sort((a, b) => (a.kind === 'sow') - (b.kind === 'sow'));
+      const stepFor = (w) => ({ skill: 'work', args: { id: w.id }, why: `${w.kind}, asked for by ${w.by}`, timeout: Math.max(60, Math.min(600, Math.round((12300 - time) / 20))) });
+      const job = jobs.find((w) => !world.blocked(stepFor(w))) ?? jobs[0];
       if (!job || world.night || time > 11200) return null;
       // Felling is paid for in falls: the first morning of it took the player from 20 health to
       // 14 with one piece of chicken left. Hurt or nearly out of food, the work waits and the

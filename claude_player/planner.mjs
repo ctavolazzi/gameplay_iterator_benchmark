@@ -55,7 +55,9 @@ export function hasTool(have, least) {
 // What a failing step is remembered by: the skill and what it was after, not how many.
 export function signature(step) {
   const a = step.args ?? {};
-  return `${step.skill}:${a.block ?? a.item ?? a.input ?? a.animal ?? a.direction ?? ''}`;
+  // a.id: one job of work on the land from another (skills/work.mjs), so that a job that keeps
+  // failing is held back by itself and the others go on.
+  return `${step.skill}:${a.block ?? a.item ?? a.input ?? a.animal ?? a.direction ?? a.id ?? ''}`;
 }
 
 // Whether the player's own crafting table or furnace close by should be picked up before
