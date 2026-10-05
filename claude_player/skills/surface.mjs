@@ -13,16 +13,28 @@ export default async function surface({ bot, api, memory, note, skill }) {
   // corner): into the hall beside it, and on up the stairs. Everything else of the hall is
   // guarded, and a climb that came out on the lawn left a hole there every time.
   const hall = memory.hall?.whole && memory.hall.c ? memory.hall : null;
-  const here = bot.entity.position;
-  if (hall && here.y < hall.c.y - 1 && Math.hypot(here.x - hall.c.x, here.z - hall.c.z) < 90) {
+  // In the hall or the bedroom already: the stairs are a walk, and the hatch is not wanted.
+  const indoors = () => {
+    const p = bot.entity.position;
+    return !!hall && p.y >= hall.c.y - 0.5 && p.y <= hall.c.y + 2.5 && p.x >= hall.c.x - 1 && p.x <= hall.c.x + 10 && p.z >= hall.c.z - 3 && p.z <= hall.c.z + 4;
+  };
+  // From anywhere at the hall's height or under it, within 90 blocks. (At first only from well
+  // under it: at 02:38 on 2026-10-05 the player stood in the old pits beside its bedroom, level
+  // with the hall, for 10 minutes, with guarded walls on one side and nothing to cut a step in.)
+  const viaHatch = async (ms) => {
+    const p = bot.entity.position;
+    if (!hall || indoors() || p.y > hall.c.y + 1 || Math.hypot(p.x - hall.c.x, p.z - hall.c.z) >= 90) return false;
     const into = [hall.c.x + 8, hall.c.y, hall.c.z + 3];
-    await api.walk(new api.goals.GoalBlock(into[0], into[1], into[2]), 200000, 'climbing to the hatch in the hall', true).catch((error) => {
+    await api.walk(new api.goals.GoalBlock(into[0], into[1], into[2]), ms, 'climbing to the hatch in the hall', true).catch((error) => {
       if (/reflex|asked|died|out of time/.test(error.message)) throw error;
       note(`the hatch: ${error.message}`);
     });
     const now = bot.entity.position.floored();
-    if (now.x === into[0] && now.z === into[2] && now.y === into[1]) note(`up through the hatch into the hall from ${Math.round(startY)}`);
-  }
+    const there = now.x === into[0] && now.z === into[2] && now.y === into[1];
+    if (there) note(`up through the hatch into the hall from ${Math.round(p.y)}`);
+    return there;
+  };
+  await viaHatch(200000);
   for (let leg = 0; leg < 12 && bot.entity.position.y < top - 2 && stalled < 2; leg++) {
     api.check();
     const from = bot.entity.position.y;
@@ -35,6 +47,8 @@ export default async function surface({ bot, api, memory, note, skill }) {
     stalled = bot.entity.position.y - from < 3 ? stalled + 1 : 0;
     // A leg the pathfinder could not decide on is cut by hand, a step at a time (climb.mjs):
     // with empty hands it thinks about a climb through stone until its time is gone.
+    // A leg that went nowhere near the hall: the hatch is tried again before any cutting.
+    if (stalled && bot.entity.position.y < top - 2 && (await viaHatch(120000))) { stalled = 0; continue; }
     if (stalled && bot.entity.position.y < top - 2) {
       const cut = await skill('climb', { toY: to, seconds: 150 });
       note(cut.note);
