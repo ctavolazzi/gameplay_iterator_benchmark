@@ -82,6 +82,7 @@ async function serve(gamePort, startAuto) {
   let lastReconnect = 0;
   let diedAt = 0;          // when it last died, until the respawn has been given a new connection
   let forced = [];         // when the server last put the player back where it was
+  let lastPutBack = 0;     // when that was last written down
   let deliberate = false;  // the connection is being ended here, to begin a new one
   const reflexState = { holdUntil: 0 };
   const say = (text, to = null) => {
@@ -172,12 +173,15 @@ async function serve(gamePort, startAuto) {
       const now = Date.now();
       forced = forced.filter((at) => now - at < 15000);
       forced.push(now);
-      if (forced.length >= 8 && now - lastReconnect > 120000 && !quitting && !b.isSleeping) {
+      // Written down, and no more than that. It began a new connection three times in its
+      // first three hours and was wrong each time: swimming twice, and once climbing the hatch,
+      // a column one block wide, where the server corrects every jump. The two coming apart has
+      // only been seen after a death, which has its own new connection, and three walks in a
+      // row that go nowhere still have theirs.
+      if (forced.length >= 8 && now - lastPutBack > 120000) {
         forced = [];
-        lastReconnect = now;
-        event('reconnect', { why: 'the server put the player back 8 times in 15 s', where: where() });
-        deliberate = true;
-        b.quit();
+        lastPutBack = now;
+        event('put_back', { times: 8, seconds: 15, where: where(), doing: current?.name ?? null });
       }
     });
     b.on('death', () => {

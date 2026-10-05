@@ -237,8 +237,10 @@ is CT's and is never started, stopped or restarted from here.
   wants the name `stop_sleeping`. `lib.mjs getUp()` sends the name.
 - **The player and the server can come apart, and then nothing it does takes.** After a death
   it has stood still at its door on the server while, in its own head, it climbed about in a
-  pit for 12 minutes. `player.mjs` now makes a new connection after every death, and when the
-  server puts it back 8 times in 15 s. If a skill "moves" and the world does not change, quit
+  pit for 12 minutes. `player.mjs` now makes a new connection after every death, and after three
+  walks in a row that go nowhere. (For three hours it also did when the server put it back 8
+  times in 15 s. That was wrong all three times it fired, swimming and climbing the hatch, and
+  is now only journalled as `put_back`.) If a skill "moves" and the world does not change, quit
   and start it again before believing anything else: `player.mjs quit`, `open claude_player/play.command`.
 - **With empty hands the pathfinder cannot decide.** Stone costs it so much to dig by hand that
   it searches every cheap tunnel first and runs out of time. `climb.mjs` needs no path.
