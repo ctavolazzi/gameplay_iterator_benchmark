@@ -214,7 +214,7 @@ export async function heard({ bot, memory, username, message, status, event, say
     }
     memory.works.push(...added);
     event('order', { kind: 'work', from: username, jobs: added.map((w) => `${w.kind} ${w.id}`) });
-    const words = { farm: 'a farm, on the flattest ground I can find there', build: 'a storehouse with chests in it', clear: 'the ground brought down to one level', trees: 'the trees felled whole and the wood kept' };
+    const words = { farm: 'a farm, on the flattest ground I can find there', build: 'a storehouse with chests in it', hall: 'a bigger base: a hall beside my bedroom, with stairs up to the open air', clear: 'the ground brought down to one level', trees: 'the trees felled whole and the wood kept' };
     answer = added.length
       ? `On my list, ${username}: ${list(added.map((w) => words[w.kind]))}. ${at ? 'Round where you are standing.' : 'Round my home, since I cannot see you.'} I work at it by day, a piece at a time, and say where before I dig.`
       : `That is on my list already, ${username}, and I am at it by day.`;

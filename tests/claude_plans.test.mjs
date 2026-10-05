@@ -12,7 +12,9 @@ test('what goes into the storehouse: the bulk, not the tools in use, the food, t
     { name: 'oak_sapling', count: 30 }, { name: 'white_banner', count: 1 }, { name: 'diorite', count: 18 }, { name: 'diamond', count: 20 }, { name: 'cobblestone', count: 62 },
   ];
   const got = Object.fromEntries(surplusOf(pack, ['diamond_pickaxe', 'diamond_hoe'], 14));
-  assert.deepEqual(got, { oak_log: 95, spruce_log: 51, coal: 112, iron_pickaxe: 1, stone_pickaxe: 1, wooden_hoe: 1, oak_sapling: 30, white_banner: 1, diamond: 14, cobblestone: 30 });
+  assert.deepEqual(got, { oak_log: 95, spruce_log: 51, coal: 112, iron_pickaxe: 1, stone_pickaxe: 1, wooden_hoe: 1, oak_sapling: 30, white_banner: 1, diamond: 14 });
+  // Chests carried are about to be put down, and a stack of stone is kept to build with.
+  assert.deepEqual(surplusOf([{ name: 'chest', count: 4 }, { name: 'cobblestone', count: 64 }, { name: 'cobblestone', count: 30 }], [], 0), [['cobblestone', 30]]);
   // With nothing to spare, nothing goes.
   assert.deepEqual(surplusOf([{ name: 'oak_log', count: 16 }, { name: 'diamond_pickaxe', count: 1 }, { name: 'bread', count: 5 }], ['diamond_pickaxe'], 0), []);
 });

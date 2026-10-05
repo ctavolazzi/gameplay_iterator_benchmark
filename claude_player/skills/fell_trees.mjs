@@ -10,7 +10,7 @@ import { statSync } from 'node:fs';
 const load = (file) => { const url = new URL(file, import.meta.url); return import(`${url.href}?v=${statSync(url).mtimeMs}`); };
 const SCAFFOLD = /^(dirt|cobblestone|cobbled_deepslate|stone|netherrack|andesite|diorite|granite|tuff)$/;
 
-export default async function fellTrees({ bot, api }, { x1, z1, x2, z2, near = null, radius = 20, seconds = 600, floatingOnly = false }) {
+export default async function fellTrees({ bot, api, memory }, { x1, z1, x2, z2, near = null, radius = 20, seconds = 600, floatingOnly = false, dry = false }) {
   const { trees, MADE } = await load('../land.mjs');
   const { Vec3 } = api;
   const centre = near ?? (Number.isInteger(x1) ? null : api.round(bot.entity.position));
@@ -76,7 +76,7 @@ export default async function fellTrees({ bot, api }, { x1, z1, x2, z2, near = n
   let pillarsLeft = null;   // null: the sweep for pillars was not reached this time
   const trouble = {};
   try {
-    while (Date.now() < until) {
+    while (!dry && Date.now() < until) {
       api.check();
       const feet = bot.entity.position;
       const tree = scan().todo.filter((t) => !skipped.has(key(t.base)))
@@ -113,23 +113,57 @@ export default async function fellTrees({ bot, api }, { x1, z1, x2, z2, near = n
     // and took 43 back). A tower built to reach the top of another is a pillar too, and comes
     // down from under the player's own feet. Nothing within 2 blocks of a made thing is touched.
     const open = (at) => bot.blockAt(at)?.boundingBox !== 'block';
+    const PLACED = /^(cobblestone|cobbled_deepslate|dirt|netherrack)$/;
+    // The height of the ground here: the field's if there is one, else the home's.
+    const surface = memory.farmField?.level ?? (memory.home ? memory.home.y - 1 : feetY - 1);
     const pillars = () => {
-      const out = [], made = [];
+      const out = [], made = [], stones = new Map();
       for (let x = xa - 2; x <= xb + 2; x++) for (let z = za - 2; z <= zb + 2; z++) for (let y = feetY - 12; y <= feetY + 45; y++) {
         const at = new Vec3(x, y, z);
         const block = bot.blockAt(at);
         if (!block || block.name === 'air') continue;
         if (MADE.test(block.name)) { made.push(at); continue; }
+        // Only above the ground the player walks on. Under it, a block with air below is the
+        // roof of a cave or of a pit: on 2026-10-04 the rule for "hanging" blocks, with no such
+        // limit, took 152 blocks out of the ground over the pits by the base in three runs.
+        if (y <= surface + 1) continue;
+        if (SCAFFOLD.test(block.name)) stones.set(key(at), at);
         if (x < xa || x > xb || z < za || z > zb || !SCAFFOLD.test(block.name)) continue;
         // A tower: air on all four sides. Or a bridge, or the stub of one: building stone or
         // earth with two blocks of air under it (three such hung south of the storehouse at
         // y 68, in a row, so that the middle one had neighbours and was not a tower).
         const tower = open(at.offset(1, 0, 0)) && open(at.offset(-1, 0, 0)) && open(at.offset(0, 0, 1)) && open(at.offset(0, 0, -1));
-        const hanging = open(at.offset(0, -1, 0)) && open(at.offset(0, -2, 0));
+        // Hanging: only what a player puts down. Stone as the world made it is not litter.
+        const hanging = PLACED.test(block.name) && open(at.offset(0, -1, 0)) && open(at.offset(0, -2, 0));
         if (tower || hanging) out.push(at);
       }
-      return out.filter((at) => !made.some((m) => Math.abs(m.x - at.x) <= 2 && Math.abs(m.y - at.y) <= 3 && Math.abs(m.z - at.z) <= 2) && !byPerson(at));
+      // What leads to a build is a way to it, and stays: a walkway of cobblestone at y 73 ran
+      // 7 blocks to the edge of fogsift's treehouse, and only its last block was near enough
+      // to the fence to be kept by distance. So whatever is joined to a kept block is kept,
+      // block to block, corners included.
+      const kept = new Set();
+      // (Within 4 blocks to the side: that walkway stopped 3 short of the fence, a gap a
+      // person jumps. In doubt it is somebody's, and stays.)
+      const queue = [...stones.values()].filter((at) => made.some((m) => Math.abs(m.x - at.x) <= 4 && Math.abs(m.y - at.y) <= 3 && Math.abs(m.z - at.z) <= 4));
+      for (const at of queue) kept.add(key(at));
+      while (queue.length) {
+        const at = queue.pop();
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+          const next = stones.get(`${at.x + dx},${at.y + dy},${at.z + dz}`);
+          if (next && !kept.has(key(next))) { kept.add(key(next)); queue.push(next); }
+        }
+      }
+      return out.filter((at) => !kept.has(key(at)) && !byPerson(at));
     };
+    // dry: what would be felled and taken down, and nothing done. The rule for hanging blocks
+    // was first seen at work by what it dug (152 blocks of the ground over the pits).
+    if (dry) {
+      const list = pillars();
+      const names = {};
+      for (const at of list) { const n = bot.blockAt(at)?.name ?? '?'; names[n] = (names[n] ?? 0) + 1; }
+      const found = scan();
+      return { ok: true, left: found.todo.length + list.length, note: `would fell ${found.todo.length} trees and take down ${list.length} blocks of pillar or bridge (${Object.entries(names).map(([n, c]) => `${c} ${n}`).join(', ') || 'none'}), all above Y ${surface + 1}: ${JSON.stringify(list.slice(0, 40).map((at) => [at.x, at.y, at.z]))}`.slice(0, 1200) };
+    }
     const gaveUp = new Set();
     while (Date.now() < until) {
       api.check();

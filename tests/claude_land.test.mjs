@@ -17,7 +17,8 @@ test('a loose request is read for the jobs it asks for', () => {
 });
 
 test('talk about a farm, a tree or a level is not a request', () => {
-  for (const said of ['nice farm', 'where is the farm?', 'did you cut the trees?', 'what level are you at', 'Claude can you build a bigger base?',
+  assert.deepEqual(asksFor('Claude can you build a bigger base?'), [{ kind: 'hall' }]);
+  for (const said of ['nice farm', 'where is the farm?', 'did you cut the trees?', 'what level are you at', 'nice base', 'where is your base',
     'is the field flat yet', 'I went to sleep', 'follow me', 'execute order 66', 'how is the farm coming along',
     "don't cut the trees by my house", 'you can cut trees faster with an axe', 'stop flattening the hill', 'never build a farm on sand']) {
     assert.deepEqual(asksFor(said), [], said);

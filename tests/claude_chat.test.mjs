@@ -14,7 +14,7 @@ test('what was really said in the game is read for what it asked', () => {
     'Everybody go to sleep': 'bed',
     'Claude go to bed': 'bed',
     "Well it's almost morning anyway so I guess everybody rise and shine": 'morning',
-    'Claude can you build a bigger base?': 'open',
+    'Claude can you build a bigger base?': 'works',
     'What do you guys think about doing some cleanup today?': 'open',
     'I was thinking we could flatten the surrounding area and prepare to get some crops going': 'works',
     'How far are you from bed?': 'bedtrip',

@@ -22,7 +22,7 @@ export default async function climb({ bot, api }, { toY, x = null, z = null, sec
     const here = block(at);
     if (!here) return false;
     if (here.boundingBox !== 'block') return !/water|lava/.test(here.name);
-    return here.diggable && !MADE.test(here.name) && !api.inBase(at) && !wet(at);
+    return here.diggable && !MADE.test(here.name) && !api.inBase(at) && !bot.claudeGuard?.(at) && !wet(at);
   };
   let dug = 0, steps = 0, misses = 0, why = '';
   let heading = null;

@@ -115,7 +115,7 @@ export async function job(ctx, args = {}) {
   }
   const { asksFor } = await ctx.fresh('land.mjs');
   const asked = args.say ? asksFor(args.say) : [{ kind: args.kind, ...(Number.isInteger(args.standAt) && { standAt: args.standAt }), ...(args.what && { what: String(args.what) }) }];
-  if (!asked.length || asked.some((a) => !['farm', 'build', 'clear', 'trees'].includes(a.kind))) throw new Error('say a kind (farm, build, clear or trees), or the words to read');
+  if (!asked.length || asked.some((a) => !['farm', 'build', 'hall', 'clear', 'trees'].includes(a.kind))) throw new Error('say a kind (farm, build, hall, clear or trees), or the words to read');
   const made = asked.map((a, i) => ({ id: `${Date.now().toString(36)}${i}`, ...a, by: String(args.by ?? 'the session'),
     ...(args.near && { near: { x: Math.round(args.near.x), z: Math.round(args.near.z) } }),
     ...(Number.isInteger(args.radius) && { radius: args.radius }),

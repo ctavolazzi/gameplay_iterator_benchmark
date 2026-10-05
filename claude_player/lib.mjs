@@ -5,6 +5,7 @@
 import pathfinding from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { diffCarried, fuelNeeded, shutIn } from './pure.mjs';
+import { keptWhole } from './blueprint.mjs';
 
 const { goals } = pathfinding;
 export { goals, Vec3 };
@@ -138,6 +139,23 @@ export function make(bot, signal, memory = {}) {
   // block of earth set down by the fence and a hop over on to the tilled ground. The field is
   // entered by its gate (skills/build_farm.mjs through()); the pathfinder's own gate opening
   // (canOpenDoors) is left off, because it ends the process.
+  // Nor through the hall once it is built (memory.hall, from skills/build_hall.mjs): its shell
+  // and the treads of its stairs stay whole. They were made to close the pits by the base, and
+  // one tread was dug away by a search for coal the same morning.
+  const hall = memory.hall?.whole && memory.hall.c ? { c: memory.hall.c, steps: memory.hall.steps } : null;
+  if (movements && hall) movements.exclusionAreasBreak = [...movements.exclusionAreasBreak, (block) => (block.position && keptWhole(hall, block.position) ? 1000 : 0)];
+  // And not by anything else either. Every dig the player makes goes through bot.dig, so the
+  // guard is put there, once for each connection: 25 minutes after the hall was whole, two
+  // blocks of its floor were gone, cut from below by a skill that climbs out of a pit and
+  // had never heard of a hall. (FelsenBerry calls this a digguard; RESEARCH.md.)
+  bot.claudeGuard = hall ? (at) => keptWhole(hall, at) : null;
+  if (!bot.claudeDigWrapped) {
+    const dig = bot.dig.bind(bot);
+    bot.dig = (block, ...rest) => (bot.claudeGuard && block?.position && bot.claudeGuard(block.position)
+      ? Promise.reject(new Error(`the ${block.name} at ${block.position.x} ${block.position.y} ${block.position.z} is part of the hall, and is not dug`))
+      : dig(block, ...rest));
+    bot.claudeDigWrapped = true;
+  }
   const field = memory.farmField;
   const inField = (at) => !!field && !!at && at.x >= field.x - 1 && at.x <= field.x + 21 && at.z >= field.z - 1 && at.z <= field.z + 11
     && at.y >= field.level - 2 && at.y <= field.level + 5;

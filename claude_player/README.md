@@ -73,6 +73,9 @@ stopped after 2 hours, and that is how it was stopped in the middle of a good ru
 | `atlas.mjs` | Where things were seen: ores, wood by kind, sand, clay, crops, creatures, one place per 16 blocks, in `memory.atlas`. The brain looks every 15 s (`lib.mjs prospect()`), forgets a place when it stands by it and the thing is gone, and the planner asks it before wandering. `node claude_player/player.mjs atlas` lists it. |
 | `plans.mjs` | Plans of things to build, with no game connection: cells, the order they go in, where to stand for each. `planFaults()` finds what is wrong with a plan before a block is placed. `storehouse()` is the first plan. |
 | `skills/build.mjs`, `store.mjs` | Build from a plan (count, make, place stage by stage, read the world back), and put the pack's surplus into the storehouse's chests, in and out by its door. |
+| `skills/build_hall.mjs`, `blueprint.mjs` | The bigger base: a hall 7 by 7 beside the bedroom and stairs up to the open air, built from the top of the stairs down, with the stairs walled at their sides. `checkHall()` says what is still wrong. Once whole, `lib.mjs` guards its shell and treads on `bot.dig` itself. |
+| `skills/take.mjs` | Take things back out of the storehouse: `run take '{"items":{"iron_pickaxe":1,"log":8}}'`. |
+| `skills/climb.mjs`, `cells.mjs` | A staircase cut by hand, a step at a time, with no path asked for (the pathfinder cannot decide with empty hands); and a map of the blocks round the player, a slice a height, for when the shape of the place is the reason something fails. |
 | `skills/tend.mjs` | Work the farm: cut what is ripe, sow again, till what was trodden, bake the wheat into bread. The brain does it every five minutes by day. |
 | `skills/*.mjs` | One small file per thing the player can be asked to do. |
 | `pure.mjs` | Small functions with no game connection. |
@@ -232,6 +235,16 @@ is CT's and is never started, stopped or restarted from here.
   `player.mjs status` returns (health, doing, thought, lastSkill, deaths). Keep those fields.
 - **`bot.wake()` is broken for this game version.** The library sends a number where 26.1
   wants the name `stop_sleeping`. `lib.mjs getUp()` sends the name.
+- **The player and the server can come apart, and then nothing it does takes.** After a death
+  it has stood still at its door on the server while, in its own head, it climbed about in a
+  pit for 12 minutes. `player.mjs` now makes a new connection after every death, and when the
+  server puts it back 8 times in 15 s. If a skill "moves" and the world does not change, quit
+  and start it again before believing anything else: `player.mjs quit`, `open claude_player/play.command`.
+- **With empty hands the pathfinder cannot decide.** Stone costs it so much to dig by hand that
+  it searches every cheap tunnel first and runs out of time. `climb.mjs` needs no path.
+- **A rule that picks blocks to destroy is run dry first.** `fell_trees` and `flatten` both take
+  `"dry": true` and list what they would take. The sweep for "hanging" blocks dug 152 blocks
+  out of the ground before it had one.
 - **`canOpenDoors` ends the process.** The pathfinder's option for opening fence gates throws
   from its own tick after the gate is opened (RESEARCH.md has the lines). It ended the player
   at 20:03:35 on 2026-10-04. `player.mjs` now catches such an error and plays on, but leave the

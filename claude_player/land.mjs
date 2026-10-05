@@ -29,6 +29,9 @@ export function asksFor(message) {
       // Not "a storehouse by the farm": the farm has to be the thing made, not where something else goes.
       farm: at(/\b(build|building|make|making|start|set up|create|construct|begin|get started|put in|lay out|want|need)\b.{0,60}(?<!\b(?:by|near|beside|at|to|round|around|from|in|on|for) (?:the |our |my |a |that |this )?)\b(farm|farmland|crop field|field|garden)\b/),
       build: at(/\b(build|building|make|making|put up|construct|want|need)\b.{0,40}\b(storehouse|store ?room|storage|shed|barn|warehouse)\b/),
+      // "Claude can you build a bigger base?" (fogsift, 06:17 on 2026-10-04) was answered with "I
+      // have slept in my bed", then passed to the session, and built 15 hours later.
+      hall: at(/\b(bigger|larger|expand|extend|enlarge)\b.{0,30}\b(base|home|room)\b/),
       clear: at(/\b(flatten|level (out|off|the|this|that|everything|it)|even out|smooth out)\b/),
       trees: Math.max(at(/\b(cut|chop|fell|clear|remove|eliminate|get rid of|take down|finish(ed)?( up| off)?|harvest)\b.{0,60}\btrees?\b/),
         at(/\btrees?\b.{0,80}\b(cut|chopped|felled|gone|removed|finished( up| off)?|harvested|eliminated|taken down)\b/)),

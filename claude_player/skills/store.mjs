@@ -5,9 +5,11 @@
 // working amount of wood, coal, earth and stone. The rest goes in: the base's chest was for
 // what a death must not take, and this is for everything gathered. What each chest holds is
 // remembered. No args.
-const ALWAYS = /^(torch|bucket|water_bucket|.*_bed|shield|wheat_seeds|beetroot_seeds|carrot|potato|cooked_.*|bread|apple|baked_potato)$/;
+// (A chest carried is a chest about to be put down: the hall's four were made, put away in
+// the storehouse by the next goal, and made again.)
+const ALWAYS = /^(torch|chest|bucket|water_bucket|.*_bed|shield|wheat_seeds|beetroot_seeds|carrot|potato|cooked_.*|bread|apple|baked_potato)$/;
 const NOT_WORTH_A_PLACE = /^(diorite|andesite|granite|tuff|gravel|leaf_litter|rotten_flesh|cobbled_deepslate|flint|egg|feather)$/;
-const UP_TO = [[/_log$/, 16], [/_planks$/, 16], [/^stick$/, 16], [/^(coal|charcoal)$/, 16], [/^dirt$/, 32], [/^cobblestone$/, 32]];
+const UP_TO = [[/_log$/, 16], [/_planks$/, 16], [/^stick$/, 16], [/^(coal|charcoal)$/, 16], [/^dirt$/, 32], [/^cobblestone$/, 64]];
 
 // [name, count] of what is carried beyond that.
 export function surplusOf(items, best = [], diamondsSpare = 0) {

@@ -435,6 +435,9 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['store', () => {
       const house = memory.store;
       if (!house || world.night || time > 11400 || now - (house.fullAt ?? 0) < 1800000) return null;
+      // Not in the middle of building: what is carried then is what is being built with. The
+      // hall's chests and its planks were each put away between two steps of the job.
+      if ((memory.works ?? []).some((w) => !w.done && (w.kind === 'hall' || w.kind === 'build'))) return null;
       if (!world.exposed && world.y < world.surfaceY - 6) return null;
       const far = Math.hypot(here.x - house.door.outside.x, here.z - house.door.outside.z);
       const free = bot.inventory.emptySlotCount();

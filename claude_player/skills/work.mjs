@@ -143,6 +143,49 @@ export default async function work({ bot, api, memory, skill, note }, { id = nul
     return built.whole ? finish(`The ${what} is whole.`) : more(built.ok, 'More to build.');
   }
 
+  if (job.kind === 'hall') {
+    // The bigger base (skills/build_hall.mjs). What it takes comes out of the storehouse
+    // first: a pickaxe, coal for torches, wood for chests.
+    const carried = () => api.carried();
+    const planks = () => Object.entries(carried()).filter(([item]) => item.endsWith('_planks')).reduce((sum, [, n]) => sum + n, 0);
+    const logs = () => Object.entries(carried()).filter(([item]) => item.endsWith('_log')).reduce((sum, [, n]) => sum + n, 0);
+    const torchesShort = Math.max(0, 6 - (memory.hall?.lit ?? 0) - (carried().torch ?? 0));
+    // Chests are made last, when the room is otherwise whole: made first, they were put away
+    // by the next goal to run, twice.
+    const roomDone = memory.hall && memory.hall.faults === 0;
+    const chestsShort = roomDone ? Math.max(0, 4 - (memory.hall?.chests ?? 0) - (carried().chest ?? 0)) : 0;
+    // The gaps are closed with planks: what stone is carried, and wood for the rest.
+    const stone = () => Object.entries(carried()).filter(([item]) => /^(cobblestone|cobbled_deepslate|stone|andesite|diorite|granite|tuff|dirt)$/.test(item)).reduce((sum, [, n]) => sum + n, 0);
+    const gapWood = roomDone ? 0 : Math.max(0, (memory.hall?.gaps ?? 80) + 12 - stone());
+    const woodWanted = chestsShort * 8 + gapWood + (torchesShort ? 4 : 0) + (api.bestOf('_pickaxe') ? 0 : 4);
+    const need = {};
+    // A hall is 70 blocks of stone: not with a wooden pickaxe when an iron one is in the store.
+    const goodPick = () => /^(iron|diamond|netherite)_pickaxe$/.test(api.bestOf('_pickaxe')?.name ?? '');
+    if (!goodPick() && (memory.store?.holds?.[0]?.iron_pickaxe ?? 0) > 0) need.iron_pickaxe = 1;
+    else if (!api.bestOf('_pickaxe')) need.iron_pickaxe = 1;
+    if (torchesShort && (carried().coal ?? 0) < 2) need.coal = 4;
+    if (planks() + logs() * 4 < woodWanted) need.log = Math.ceil((woodWanted - planks()) / 4) + 1;
+    if (Object.keys(need).length && memory.store) {
+      const got = await skill('take', { items: need });
+      tell(`From the storehouse: ${got.note}`);
+    }
+    const make = async (item, times = 1) => { const made = await api.craft(item, times); if (!made.ok) tell(`${item}: ${made.error}`); return made.ok; };
+    const wood = () => bot.inventory.items().filter((item) => /_log$/.test(item.name)).sort((a, b) => b.count - a.count)[0]?.name.replace(/_log$/, '');
+    if (planks() < woodWanted && wood()) await make(`${wood()}_planks`, Math.ceil((woodWanted - planks()) / 4));
+    if (!goodPick() && ((carried().diamond ?? 0) >= 3 || !api.bestOf('_pickaxe'))) {
+      if ((carried().stick ?? 0) < 2) await make('stick');
+      await make((carried().diamond ?? 0) >= 3 ? 'diamond_pickaxe' : 'stone_pickaxe');
+    }
+    if (torchesShort && (carried().coal ?? 0) >= 1) {
+      if ((carried().stick ?? 0) < 2) await make('stick');
+      await make('torch', Math.ceil(torchesShort / 4));
+    }
+    if (chestsShort && planks() >= 8) await make('chest', Math.min(chestsShort, Math.floor(planks() / 8)));
+    const built = await skill('build_hall', { seconds: left() });
+    tell(built.note);
+    return built.whole ? finish('The hall and its stairs are whole.') : more(built.ok, 'More to build.');
+  }
+
   if (job.kind === 'clear') {
     const radius = job.radius ?? 16;
     job.level ??= levelOf(look(radius));
