@@ -73,6 +73,7 @@ export default async function fellTrees({ bot, api }, { x1, z1, x2, z2, near = n
   const cut = {};
   const skipped = new Set();
   let felled = 0, floating = 0, tidied = 0, error = null;
+  let pillarsLeft = null;   // null: the sweep for pillars was not reached this time
   const trouble = {};
   try {
     while (Date.now() < until) {
@@ -107,6 +108,42 @@ export default async function fellTrees({ bot, api }, { x1, z1, x2, z2, near = n
       }
       await api.pickUp(8, 6);
     }
+    // Then every pillar left standing: a block of building stone or earth with air on all four
+    // sides is a tower the pathfinder climbed (the first morning's felling put down 94 blocks
+    // and took 43 back). A tower built to reach the top of another is a pillar too, and comes
+    // down from under the player's own feet. Nothing within 2 blocks of a made thing is touched.
+    const open = (at) => bot.blockAt(at)?.boundingBox !== 'block';
+    const pillars = () => {
+      const out = [], made = [];
+      for (let x = xa - 2; x <= xb + 2; x++) for (let z = za - 2; z <= zb + 2; z++) for (let y = feetY - 12; y <= feetY + 45; y++) {
+        const at = new Vec3(x, y, z);
+        const block = bot.blockAt(at);
+        if (!block || block.name === 'air') continue;
+        if (MADE.test(block.name)) { made.push(at); continue; }
+        if (x < xa || x > xb || z < za || z > zb || !SCAFFOLD.test(block.name)) continue;
+        if (open(at.offset(1, 0, 0)) && open(at.offset(-1, 0, 0)) && open(at.offset(0, 0, 1)) && open(at.offset(0, 0, -1))) out.push(at);
+      }
+      return out.filter((at) => !made.some((m) => Math.abs(m.x - at.x) <= 2 && Math.abs(m.y - at.y) <= 3 && Math.abs(m.z - at.z) <= 2) && !byPerson(at));
+    };
+    const gaveUp = new Set();
+    while (Date.now() < until) {
+      api.check();
+      const todo = pillars().filter((at) => !gaveUp.has(key(at)));
+      if (!todo.length) break;
+      const eye = bot.entity.position.offset(0, 1.62, 0);
+      const under = bot.entity.position.floored().offset(0, -1, 0);
+      const reach = todo.filter((at) => at.offset(0.5, 0.5, 0.5).distanceTo(eye) <= 4.4)
+        // Highest first, and the block the player stands on last of all.
+        .sort((a, b) => (key(a) === key(under)) - (key(b) === key(under)) || b.y - a.y);
+      const target = reach[0] ?? todo.sort((a, b) => a.distanceTo(eye) - b.distanceTo(eye))[0];
+      try {
+        if (await digHere(target, 'pillar')) tidied += 1;
+      } catch (failure) {
+        api.check();
+        gaveUp.add(key(target));
+      }
+    }
+    pillarsLeft = pillars().length;
   } catch (failure) {
     error = failure.message;
   } finally {
@@ -116,6 +153,8 @@ export default async function fellTrees({ bot, api }, { x1, z1, x2, z2, near = n
   const logs = Object.entries(cut).map(([name, n]) => `${n} ${name}`).join(', ');
   const kept = after.inside.filter((t) => t.kept).length;
   const problems = Object.entries(trouble).map(([reason, n]) => `${reason} x${n}`).join(', ');
-  const note = `felled ${felled} trees (${floating} of them hanging in the air), cut ${logs || 'no logs'}${tidied ? `, took down ${tidied} blocks of my own climbing` : ''}; ${after.todo.length} trees left to fell, ${kept} left standing because something is built on them, ${after.leaves} leaves still to fall${problems ? `; ${problems}` : ''}${error ? `; ended: ${error}` : ''}`;
-  return { ok: felled > 0 || Object.keys(cut).length > 0 || after.todo.length === 0, note: note.slice(0, 700), left: after.todo.length };
+  const note = `felled ${felled} trees (${floating} of them hanging in the air), cut ${logs || 'no logs'}${tidied ? `, took down ${tidied} blocks of my own climbing` : ''}; ${after.todo.length} trees left to fell, ${kept} left standing because something is built on them, ${after.leaves} leaves still to fall, ${pillarsLeft === null ? 'pillars not looked for yet' : `${pillarsLeft} blocks of pillar left`}${problems ? `; ${problems}` : ''}${error ? `; ended: ${error}` : ''}`;
+  // Not done until the pillars have been looked for and none stand.
+  const left = after.todo.length + (pillarsLeft ?? 1);
+  return { ok: felled > 0 || tidied > 0 || Object.keys(cut).length > 0 || left === 0, note: note.slice(0, 700), left };
 }

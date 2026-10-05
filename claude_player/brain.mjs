@@ -382,6 +382,10 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
     ['works', () => {
       const job = (memory.works ?? []).find((w) => !w.done);
       if (!job || world.night || time > 11200) return null;
+      // Felling is paid for in falls: the first morning of it took the player from 20 health to
+      // 14 with one piece of chicken left. Hurt or nearly out of food, the work waits and the
+      // goals below it (food) have their turn.
+      if (bot.health < 12 || foodCarried < 2) return null;
       return open({ skill: 'work', args: { id: job.id }, why: `${job.kind}, asked for by ${job.by}`, timeout: Math.max(60, Math.min(600, Math.round((12300 - time) / 20))) })
         ?? { stuck: `the ${job.kind} ${job.by} asked for keeps failing` };
     }],
