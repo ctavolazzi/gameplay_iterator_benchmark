@@ -92,6 +92,42 @@ export default async function build({ bot, api, memory }, { plan: planName = 'st
       remember();
       return { ok: true, note: `the ${plan.name} at ${x} ${y} ${z} is whole`, whole: true, left: 0 };
     }
+    // 0 No room in the pack to make anything (it was full to the last place when the first
+    // storehouse was due to be built: the thing that would empty it could not be started). So
+    // the plan's first chest goes down before anything else, on the bare site, and what is not
+    // building material goes into it.
+    const firstChest = plan.stages.flatMap((stage) => stage.cells).find((cell) => cell.role === 'chest');
+    if (firstChest && bot.inventory.emptySlotCount() < 4) {
+      if (!ROLE.chest.test(name(firstChest) ?? '')) {
+        if (!count(ROLE.chest)) { const got = await api.craft('chest'); if (!got.ok) trouble.push(`a first chest: ${got.error}`); }
+        if (count(ROLE.chest)) {
+          await api.walk(new goals.GoalBlock(plan.spots.middle.x, plan.spots.middle.y, plan.spots.middle.z), 60000, 'walking on to the site');
+          await api.settle();
+          if (await place(firstChest)) placed += 1;
+        }
+      }
+      if (ROLE.chest.test(name(firstChest) ?? '')) {
+        const { surplusOf } = await load('./store.mjs');
+        const best = ['_pickaxe', '_sword', '_axe', '_hoe', '_shovel'].map((ending) => api.bestOf(ending)?.name).filter(Boolean);
+        const goes = surplusOf(bot.inventory.items(), best, 0).filter(([item]) => !/_log$|_planks$|^stick$|^chest$|_door$/.test(item));
+        if (vec(firstChest).offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position.offset(0, 1.62, 0)) > 4) {
+          await api.walk(new goals.GoalNear(firstChest.x, firstChest.y, firstChest.z, 2), 30000, 'walking to the first chest');
+        }
+        const chest = await api.within(bot.openContainer(bot.blockAt(vec(firstChest))), 8000, 'opening the first chest');
+        let put = 0;
+        try {
+          for (const [item, n] of goes) {
+            try { await api.within(chest.deposit(bot.registry.itemsByName[item].id, null, n), 5000, `putting ${item} away`); put += 1; } catch { break; }
+          }
+        } finally {
+          chest.close();
+          await api.sleep(250);
+        }
+        trouble.push(`the pack was full: ${put} kinds of thing went into the first chest, and ${bot.inventory.emptySlotCount()} places are free`);
+      }
+    }
+    for (const role of Object.keys(want)) delete want[role];
+    for (const cell of missing()) want[cell.role] = (want[cell.role] ?? 0) + 1;
     const short = (role) => Math.max(0, (want[role] ?? 0) - count(ROLE[role]));
     if (short('planks') || short('chest') || short('door') || short('torch')) {
       const planks = short('planks') + 8 * short('chest') + (short('door') ? 6 : 0);

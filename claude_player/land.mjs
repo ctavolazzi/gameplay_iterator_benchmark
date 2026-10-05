@@ -44,6 +44,26 @@ export function asksFor(message) {
   return jobs.sort((a, b) => a.order - b.order).map(({ order, ...job }) => job);
 }
 
+// Whether a place is inside something the player has built and fenced or walled: the farm
+// (memory.farmField) or the storehouse (memory.store). Gives the way out: the gate or door
+// (`barrier`), the cell inside it (`from`) and the cell outside it (`to`), or null.
+// A task cut short in there (a fight, a stop from the session at 21:36 on 2026-10-04) leaves
+// the player inside, and no path leads out: nothing may be dug or placed in a field, and the
+// pathfinder does not open a gate. The brain sends it out by the gate before anything else.
+export function insideOf(memory, at) {
+  const field = memory?.farmField;
+  if (field && at.x > field.x && at.x < field.x + 20 && at.z > field.z && at.z < field.z + 10 && at.y >= field.level && at.y <= field.level + 3) {
+    const [gx, gy, gz] = [field.x + 10, field.level + 1, field.z + 10];
+    return { kind: 'farm', barrier: { x: gx, y: gy, z: gz }, from: { x: gx, y: gy, z: gz - 1 }, to: { x: gx, y: gy, z: gz + 1 } };
+  }
+  const house = memory?.store;
+  if (house?.origin && house.door && at.x > house.origin.x && at.x < house.origin.x + 4 && at.z > house.origin.z && at.z < house.origin.z + 4
+    && at.y >= house.origin.y - 1 && at.y <= house.origin.y + 2) {
+    return { kind: 'storehouse', barrier: house.door.cell, from: house.door.inside, to: house.door.outside };
+  }
+  return null;
+}
+
 // The height most of the ground is at: where a field costs least to level.
 export function groundLevel(columns) {
   const count = new Map();

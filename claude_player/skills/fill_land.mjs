@@ -4,7 +4,7 @@
 // each block, not at the reply. args: { x1, z1, x2, z2, level: 65, seconds: 300, depth: 8 }
 const UNDER = /^(cobblestone|cobbled_deepslate|diorite|andesite|granite|tuff|stone|dirt)$/;
 
-export default async function fillLand({ bot, api }, { x1, z1, x2, z2, level = 65, seconds = 300, depth = 8 }) {
+export default async function fillLand({ bot, api }, { x1, z1, x2, z2, level = 65, seconds = 300, depth = 8, anyTop = false }) {
   if (![x1, z1, x2, z2, level].every(Number.isInteger)) return { ok: false, note: 'say the corners and the level: x1, z1, x2, z2, level' };
   const [xa, xb, za, zb] = [Math.min(x1, x2), Math.max(x1, x2), Math.min(z1, z2), Math.max(z1, z2)];
   const until = Date.now() + Math.max(10, Math.min(880, Number(seconds) || 300)) * 1000;
@@ -42,7 +42,8 @@ export default async function fillLand({ bot, api }, { x1, z1, x2, z2, level = 6
       // The lowest empty cell of the nearest column.
       const first = todo[0];
       const cell = todo.filter((c) => c.x === first.x && c.z === first.z).sort((a, b) => a.y - b.y)[0];
-      const item = api.find(cell.y === level ? /^dirt$/ : UNDER) ?? api.find(/^dirt$/);
+      // The top block is earth for a field. Under a building any stone will do (anyTop).
+      const item = api.find(cell.y === level && !anyTop ? /^dirt$/ : UNDER) ?? api.find(/^dirt$/);
       if (!item) { error = `nothing carried to fill with (${todo.length} cells left)`; break; }
       try {
         // Stand beside the column, never in it.

@@ -63,6 +63,8 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       atlas.forget(memory.atlas, found, now, at);
     }
   } catch { atlas = null; }
+  let landOf = null;
+  try { landOf = await fresh('land.mjs'); } catch { landOf = null; }
 
   // In a treetop (the world's spawn point is one): down by the trunk before anything else.
   if (/_leaves$/.test(api.nameAt(bot.entity.position.floored().offset(0, -1, 0)) ?? '') && api.heightAboveGround() > 4) {
@@ -317,6 +319,12 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
   // In order of how much each matters. A goal returns null when it is done.
   const goals = [
     ['wear', () => (api.unworn().length ? { skill: 'wear', args: {}, why: 'armour carried and not worn', timeout: 20 } : null)],
+    // Inside the farm's fence or the storehouse with nothing running: out by the gate first.
+    // No path leads out of either (land.mjs insideOf() has why).
+    ['out by the gate', () => {
+      const pen = landOf?.insideOf(memory, bot.entity.position.floored());
+      return pen ? open({ skill: 'leave_field', args: {}, why: `inside the ${pen.kind}, and its ${pen.kind === 'farm' ? 'gate' : 'door'} is the way out`, timeout: 60 }) : null;
+    }],
     // A full pack stops everything that makes or picks up a thing. Away from the base's chest,
     // what is not worth a place is thrown away.
     ['room in the pack', () => {
@@ -395,6 +403,15 @@ export async function think({ bot, api, observe, memory, earned, fresh }) {
       const inside = Math.abs(here.x - 0.5 - b.x) <= 1.6 && Math.abs(here.z - 0.5 - b.z) <= 1.6 && Math.abs(here.y - b.y) <= 1.6;
       const shut = api.solid(new api.Vec3(b.x + 2, b.y, b.z)) || api.solid(new api.Vec3(b.x + 2, b.y + 1, b.z));
       return inside && shut ? open({ skill: 'leave_base', args: {}, why: 'the doorway was closed for the night', timeout: 60 }) : null;
+    }],
+    // With a farm or a job at home, home is not left far behind. On game day 66 a search for
+    // seeds, 32 blocks of grass at a time, ended 290 blocks south, and the walk back and a trip
+    // to a full chest were the whole day.
+    ['near home', () => {
+      const busyAtHome = memory.farmField || (memory.works ?? []).some((w) => !w.done);
+      if (!home || !busyAtHome || fromHome <= 150 || world.night) return null;
+      if (!world.exposed && world.y < world.surfaceY - 6) return null;
+      return open({ skill: 'goto', args: { x: home.x, z: home.z, range: 50 }, why: `${Math.round(fromHome)} blocks from home, where the farm and the work are`, timeout: 300 });
     }],
     // The farm is worked (CT, 2026-10-04: "work the farm so you will have food"): looked over
     // every five minutes by day for what is ripe, cut, sown again, and the wheat baked.

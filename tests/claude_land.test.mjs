@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-const { asksFor, groundLevel, chooseSite, pieces, trees, MADE } = await import(process.env.LAND ?? '../claude_player/land.mjs');
+const { asksFor, groundLevel, chooseSite, pieces, trees, MADE, insideOf } = await import(process.env.LAND ?? '../claude_player/land.mjs');
 const { farmPlan } = await import('../claude_player/skills/build_farm.mjs');
 
 // What CT typed to the session on 2026-10-04, and what the same wants would look like in chat.
@@ -91,6 +91,19 @@ test('logs are gathered into trees: standing, left floating, and holding a build
   assert.deepEqual([at(20).kept, at(20).logs.length], [true, 8]);
   // The lowest log comes first, so a tree is cut from the bottom.
   assert.ok(at(0).logs.every((log, i, all) => i === 0 || log.y >= all[i - 1].y));
+});
+
+test('inside the farm or the storehouse is known, with the way out; outside, on the fence and on the path to the gate are not', () => {
+  const memory = { farmField: { x: -342, z: 460, level: 65 }, store: { origin: { x: -330, y: 66, z: 474 },
+    door: { cell: { x: -328, y: 66, z: 478 }, inside: { x: -328, y: 66, z: 477 }, outside: { x: -328, y: 66, z: 479 } } } };
+  const farm = insideOf(memory, { x: -324, y: 66, z: 462 });
+  assert.deepEqual([farm.kind, farm.barrier, farm.from, farm.to], ['farm', { x: -332, y: 66, z: 470 }, { x: -332, y: 66, z: 469 }, { x: -332, y: 66, z: 471 }]);
+  assert.equal(insideOf(memory, { x: -332, y: 66, z: 471 }), null, 'the cell outside the gate');
+  assert.equal(insideOf(memory, { x: -342, y: 66, z: 465 }), null, 'on the line of the fence');
+  assert.equal(insideOf(memory, { x: -324, y: 59, z: 462 }), null, 'under the field, in a mine');
+  assert.equal(insideOf(memory, { x: -328, y: 66, z: 476 }).kind, 'storehouse');
+  assert.equal(insideOf(memory, { x: -328, y: 66, z: 479 }), null, 'the cell outside the door');
+  assert.equal(insideOf({}, { x: 0, y: 64, z: 0 }), null);
 });
 
 test('what is made is known as made', () => {

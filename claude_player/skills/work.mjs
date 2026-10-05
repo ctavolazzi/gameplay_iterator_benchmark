@@ -126,9 +126,11 @@ export default async function work({ bot, api, memory, skill, note }, { id = nul
       const cut = await skill('flatten', { x1: x - 2, z1: z - 2, x2: x + size.w + 1, z2: z + size.d + 1, level, seconds: left() });
       tell(`Levelling: ${cut.note}`);
       if (cut.left > 0) return more(cut.ok, 'More to dig.');
-      const filled = await skill('fill_land', { x1: x - 1, z1: z - 1, x2: x + size.w, z2: z + size.d, level, seconds: Math.min(left(), 300) });
+      const filled = await skill('fill_land', { x1: x - 1, z1: z - 1, x2: x + size.w, z2: z + size.d, level, seconds: Math.min(left(), 300), anyTop: true });
       tell(`Filling: ${filled.note}`);
-      return more(filled.ok || cut.ok, 'The ground is made ready; building comes next.');
+      // Said as it is: with 5 cells unfilled and nothing to fill them with this said "the
+      // ground is made ready", was asked again, and said it ten times.
+      return filled.left > 0 ? more(filled.ok, 'More to fill.') : more(true, 'The ground is made ready; building comes next.');
     }
     tell(`Building: ${built.note}`);
     return built.whole ? finish(`The ${what} is whole.`) : more(built.ok, 'More to build.');
